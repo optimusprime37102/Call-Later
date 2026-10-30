@@ -38,9 +38,9 @@ export function SplashView({ durationMs = SPLASH_DURATION_MS }: SplashViewProps)
       <View style={styles.brandBlock}>
         <View style={styles.logoFrame}>
           <Image
-            source={require('../../assets/images/splash-icon.png')}
+            source={require('../../assets/images/app-icon.png')}
             style={styles.logo}
-            resizeMode="contain"
+            resizeMode="cover"
           />
         </View>
         <AppText variant="display" style={styles.title}>
@@ -106,8 +106,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   logo: {
-    width: 72,
-    height: 72,
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.xl,
   },
   title: {
     color: '#F4F7F9',

@@ -21,16 +21,30 @@ export function EmptyState({
   actionLabel,
   onAction,
 }: EmptyStateProps) {
-  const { colors } = useAppTheme();
+  const { colors, colorScheme } = useAppTheme();
 
   return (
     <View style={styles.container}>
-      <View style={[styles.ring, { borderColor: colors.primaryMuted }]}>
+      <View
+        style={[
+          styles.ring,
+          {
+            borderColor:
+              colorScheme === 'dark'
+                ? 'rgba(45,212,191,0.18)'
+                : 'rgba(13,148,136,0.16)',
+            backgroundColor:
+              colorScheme === 'dark'
+                ? 'rgba(45,212,191,0.04)'
+                : 'rgba(13,148,136,0.04)',
+          },
+        ]}
+      >
         <View style={[styles.iconWrap, { backgroundColor: colors.primaryMuted }]}>
-          <Ionicons name={icon} size={30} color={colors.primary} />
+          <Ionicons name={icon} size={28} color={colors.primary} />
         </View>
       </View>
-      <AppText variant="headline" style={styles.title}>
+      <AppText variant="title" style={styles.title}>
         {title}
       </AppText>
       <AppText variant="callout" tone="secondary" style={styles.description}>
@@ -50,17 +64,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.huge + spacing.md,
   },
   ring: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    borderWidth: 1,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xl,
   },
   iconWrap: {
-    width: 68,
-    height: 68,
+    width: 64,
+    height: 64,
     borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',

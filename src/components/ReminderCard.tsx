@@ -23,33 +23,50 @@ export function ReminderCard({
   onCall,
   showCompletedMeta = false,
 }: ReminderCardProps) {
-  const { colors } = useAppTheme();
+  const { colors, colorScheme } = useAppTheme();
   const overdue = !showCompletedMeta && isOverdue(reminder.scheduledAt);
   const accent = overdue ? colors.danger : colors.primary;
 
   return (
     <Animated.View entering={FadeInDown.delay(Math.min(index * 40, 240)).springify()}>
-      <View
-        style={[
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
           styles.card,
           shadows.soft,
           {
             backgroundColor: colors.surface,
-            borderColor: colors.borderSubtle,
+            borderColor: overdue
+              ? colorScheme === 'dark'
+                ? 'rgba(240, 89, 90, 0.28)'
+                : 'rgba(225, 29, 72, 0.16)'
+              : colors.borderSubtle,
+            opacity: pressed ? 0.94 : 1,
+            transform: [{ scale: pressed ? 0.99 : 1 }],
           },
         ]}
       >
         <View style={[styles.accent, { backgroundColor: accent }]} />
-        <Pressable
-          onPress={onPress}
-          style={({ pressed }) => [styles.content, { opacity: pressed ? 0.92 : 1 }]}
-        >
+
+        <View style={styles.content}>
           <View style={styles.topRow}>
-            <View style={[styles.avatar, { backgroundColor: colors.primaryMuted }]}>
-              <AppText variant="callout" tone="primary">
+            <View
+              style={[
+                styles.avatar,
+                {
+                  backgroundColor: overdue ? colors.dangerMuted : colors.primaryMuted,
+                },
+              ]}
+            >
+              <AppText
+                variant="callout"
+                tone={overdue ? 'danger' : 'primary'}
+                style={styles.avatarLetter}
+              >
                 {reminder.contactName.charAt(0).toUpperCase()}
               </AppText>
             </View>
+
             <View style={styles.titleBlock}>
               <AppText variant="headline" numberOfLines={1}>
                 {reminder.contactName}
@@ -58,43 +75,59 @@ export function ReminderCard({
                 {reminder.phoneNumber}
               </AppText>
             </View>
+
             {onCall ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Call ${reminder.contactName}`}
                 onPress={onCall}
                 hitSlop={8}
-                style={[styles.callButton, { backgroundColor: colors.primaryMuted }]}
+                style={({ pressed }) => [
+                  styles.callButton,
+                  {
+                    backgroundColor: colors.primary,
+                    opacity: pressed ? 0.88 : 1,
+                  },
+                ]}
               >
-                <Ionicons name="call" size={18} color={colors.primary} />
+                <Ionicons name="call" size={16} color={colors.primaryText} />
               </Pressable>
             ) : null}
           </View>
 
-          <View
-            style={[
-              styles.metaPill,
-              {
-                backgroundColor: overdue ? colors.dangerMuted : colors.backgroundSecondary,
-              },
-            ]}
-          >
-            <Ionicons
-              name={
-                overdue
-                  ? 'alert-circle'
-                  : showCompletedMeta
-                    ? 'checkmark-circle'
-                    : 'time-outline'
-              }
-              size={14}
-              color={overdue ? colors.danger : colors.textMuted}
-            />
-            <AppText variant="caption" tone={overdue ? 'danger' : 'secondary'}>
-              {showCompletedMeta && reminder.completedAt
-                ? `Completed · ${formatReminderWhen(reminder.completedAt)}`
-                : `${formatReminderWhen(reminder.scheduledAt)} · ${formatRelativeStatus(reminder.scheduledAt)}`}
-            </AppText>
+          <View style={styles.metaRow}>
+            <View
+              style={[
+                styles.metaPill,
+                {
+                  backgroundColor: overdue
+                    ? colors.dangerMuted
+                    : colors.backgroundSecondary,
+                },
+              ]}
+            >
+              <Ionicons
+                name={
+                  overdue
+                    ? 'alert-circle'
+                    : showCompletedMeta
+                      ? 'checkmark-circle'
+                      : 'time-outline'
+                }
+                size={13}
+                color={overdue ? colors.danger : colors.textMuted}
+              />
+              <AppText variant="caption" tone={overdue ? 'danger' : 'secondary'}>
+                {showCompletedMeta && reminder.completedAt
+                  ? `Completed · ${formatReminderWhen(reminder.completedAt)}`
+                  : formatReminderWhen(reminder.scheduledAt)}
+              </AppText>
+            </View>
+            {!showCompletedMeta ? (
+              <AppText variant="caption" tone={overdue ? 'danger' : 'muted'}>
+                {formatRelativeStatus(reminder.scheduledAt)}
+              </AppText>
+            ) : null}
           </View>
 
           {reminder.notes ? (
@@ -102,8 +135,8 @@ export function ReminderCard({
               {reminder.notes}
             </AppText>
           ) : null}
-        </Pressable>
-      </View>
+        </View>
+      </Pressable>
     </Animated.View>
   );
 }
@@ -118,11 +151,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   accent: {
-    width: 4,
+    width: 3,
   },
   content: {
     flex: 1,
-    padding: spacing.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   topRow: {
@@ -131,25 +165,34 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   avatar: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarLetter: {
+    fontWeight: '700',
   },
   titleBlock: {
     flex: 1,
     gap: 2,
   },
   callButton: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   metaPill: {
-    alignSelf: 'flex-start',
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -158,6 +201,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   notes: {
-    marginTop: -2,
+    marginTop: -4,
   },
 });

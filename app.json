@@ -4,9 +4,14 @@
     "slug": "Call-Later",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/app-icon.png",
     "scheme": "calllater",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/app-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#061016"
+    },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -15,6 +20,7 @@
     },
     "android": {
       "package": "com.calllater.app",
+      "icon": "./assets/images/app-icon.png",
       "adaptiveIcon": {
         "backgroundColor": "#061016",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -49,7 +55,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/app-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#061016"

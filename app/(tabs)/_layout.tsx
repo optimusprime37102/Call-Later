@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, StyleSheet } from 'react-native';
+import { FloatingTabBar } from '@/src/components/FloatingTabBar';
 import { useAppTheme } from '@/src/context/ThemeContext';
 
 export default function TabLayout() {
@@ -8,24 +8,22 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.tabIconActive,
         tabBarInactiveTintColor: colors.tabIcon,
+        // Kill the default tab chrome (white top hairline + reserved strip)
         tabBarStyle: {
-          backgroundColor: colors.tabBar,
-          borderTopColor: colors.borderSubtle,
-          borderTopWidth: StyleSheet.hairlineWidth * 2,
-          height: Platform.OS === 'android' ? 68 : 88,
-          paddingBottom: Platform.OS === 'android' ? 12 : 28,
-          paddingTop: 10,
+          position: 'absolute',
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
+          borderTopColor: 'transparent',
           elevation: 0,
+          shadowOpacity: 0,
+          height: 0,
         },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '700',
-          letterSpacing: 0.2,
-        },
+        sceneStyle: { backgroundColor: colors.background },
       }}
     >
       <Tabs.Screen

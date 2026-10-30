@@ -1,16 +1,14 @@
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Platform, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ReminderCard } from '@/src/components/ReminderCard';
 import { EmptyState } from '@/src/components/ui/EmptyState';
 import { AppText } from '@/src/components/ui/AppText';
 import { useReminders } from '@/src/context/RemindersContext';
 import { useAppTheme } from '@/src/context/ThemeContext';
+import { tabBarContentInset } from '@/src/theme/layout';
 import { spacing } from '@/src/theme/tokens';
-
-/** Keep in sync with tabBarStyle.height in app/(tabs)/_layout.tsx */
-const TAB_BAR_HEIGHT = Platform.OS === 'android' ? 68 : 88;
 
 export default function CompletedScreen() {
   const insets = useSafeAreaInsets();
@@ -31,7 +29,7 @@ export default function CompletedScreen() {
           styles.content,
           {
             paddingTop: insets.top + spacing.lg,
-            paddingBottom: TAB_BAR_HEIGHT + spacing.huge,
+            paddingBottom: tabBarContentInset(insets.bottom) + spacing.xxl,
           },
         ]}
         refreshControl={

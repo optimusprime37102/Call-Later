@@ -30,10 +30,8 @@ import {
   SnoozeDurationMinutes,
   ThemePreference,
 } from '@/src/types/settings';
+import { tabBarContentInset } from '@/src/theme/layout';
 import { radius, shadows, spacing } from '@/src/theme/tokens';
-
-/** Keep in sync with tabBarStyle.height in app/(tabs)/_layout.tsx */
-const TAB_BAR_HEIGHT = Platform.OS === 'android' ? 68 : 88;
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -150,7 +148,7 @@ export default function SettingsScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: insets.top + spacing.lg,
-        paddingBottom: TAB_BAR_HEIGHT + spacing.huge,
+        paddingBottom: tabBarContentInset(insets.bottom) + spacing.xxl,
       }}
     >
       <View style={styles.header}>
