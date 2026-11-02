@@ -13,6 +13,8 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.airbnb.lottie.LottieAnimationView
+import com.airbnb.lottie.LottieDrawable
 
 data class AlarmOverlayPayload(
   val alarmId: String,
@@ -61,19 +63,19 @@ object AlarmOverlayUi {
     val content = LinearLayout(context).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_HORIZONTAL
-      setPadding(0, dp(40), 0, dp(24))
+      setPadding(0, dp(28), 0, dp(16))
     }
 
     val avatar = TextView(context).apply {
       text = payload.contactName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
       gravity = Gravity.CENTER
       setTextColor(Color.parseColor("#2DD4BF"))
-      setTextSize(TypedValue.COMPLEX_UNIT_SP, 36f)
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
       setTypeface(typeface, Typeface.BOLD)
       background = rounded(Color.argb(0x29, 0x2D, 0xD4, 0xBF), dp(28))
-      layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)).apply {
+      layoutParams = LinearLayout.LayoutParams(dp(88), dp(88)).apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        bottomMargin = dp(20)
+        bottomMargin = dp(16)
       }
     }
     content.addView(avatar)
@@ -96,6 +98,19 @@ object AlarmOverlayUi {
         setPadding(0, dp(8), 0, 0)
       },
     )
+
+    val animation = LottieAnimationView(context).apply {
+      layoutParams = LinearLayout.LayoutParams(dp(300), dp(260)).apply {
+        gravity = Gravity.CENTER_HORIZONTAL
+        topMargin = dp(16)
+        bottomMargin = dp(8)
+      }
+      setAnimation("incoming_call.json")
+      repeatCount = LottieDrawable.INFINITE
+      playAnimation()
+    }
+    content.addView(animation)
+
     if (payload.notes.isNotBlank()) {
       content.addView(
         TextView(context).apply {
@@ -107,7 +122,7 @@ object AlarmOverlayUi {
           layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
-          ).apply { topMargin = dp(24) }
+          ).apply { topMargin = dp(16) }
         },
       )
     }
@@ -118,19 +133,12 @@ object AlarmOverlayUi {
       orientation = LinearLayout.VERTICAL
     }
 
-    actions.addView(
-      actionButton(context, "Call Now", Color.parseColor("#0D9488"), Color.WHITE) {
-        openDialer(context, payload.phoneNumber)
-        finishAlarm(context, payload.alarmId, onClose)
-      },
-    )
-
     val snoozeRow = LinearLayout(context).apply {
       orientation = LinearLayout.HORIZONTAL
       layoutParams = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
-      ).apply { topMargin = dp(12) }
+      )
     }
     listOf(10 to "10m", 30 to "30m", 60 to "1h").forEachIndexed { index, (minutes, label) ->
       val chip = actionButton(
@@ -138,6 +146,7 @@ object AlarmOverlayUi {
         label,
         Color.parseColor("#14FFFFFF"),
         Color.parseColor("#E8EEF2"),
+        heightDp = 48,
       ) {
         snooze(context, payload, minutes)
         finishAlarm(context, payload.alarmId, onClose)
@@ -149,25 +158,55 @@ object AlarmOverlayUi {
     }
     actions.addView(snoozeRow)
 
+    val primaryRow = LinearLayout(context).apply {
+      orientation = LinearLayout.HORIZONTAL
+      layoutParams = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+      ).apply { topMargin = dp(12) }
+    }
+
+    // Teal for call, blue for completed — clearly distinct hues.
+    val callButton = actionButton(
+      context,
+      "Call Now",
+      Color.parseColor("#40E088"),
+      Color.WHITE,
+      heightDp = 56,
+    ) {
+      openDialer(context, payload.phoneNumber)
+      finishAlarm(context, payload.alarmId, onClose)
+    }.apply {
+      layoutParams = LinearLayout.LayoutParams(0, dp(56), 1.15f)
+    }
+
+    val completedButton = actionButton(
+      context,
+      "Completed",
+      Color.parseColor("#2563EB"),
+      Color.WHITE,
+      heightDp = 56,
+    ) {
+      AlarmActionStore.markCompleted(context, payload.reminderId)
+      finishAlarm(context, payload.alarmId, onClose)
+    }.apply {
+      layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+        marginStart = dp(8)
+      }
+    }
+
+    primaryRow.addView(callButton)
+    primaryRow.addView(completedButton)
+    actions.addView(primaryRow)
+
     actions.addView(
       actionButton(
         context,
-        "Mark completed",
-        Color.parseColor("#1AFFFFFF"),
-        Color.parseColor("#F4F7F9"),
+        "Dismiss",
+        Color.TRANSPARENT,
+        Color.parseColor("#B8CDD8"),
+        heightDp = 48,
       ) {
-        AlarmActionStore.markCompleted(context, payload.reminderId)
-        finishAlarm(context, payload.alarmId, onClose)
-      }.apply {
-        layoutParams = LinearLayout.LayoutParams(
-          LinearLayout.LayoutParams.MATCH_PARENT,
-          dp(52),
-        ).apply { topMargin = dp(12) }
-      },
-    )
-
-    actions.addView(
-      actionButton(context, "Dismiss", Color.TRANSPARENT, Color.parseColor("#B8CDD8")) {
         finishAlarm(context, payload.alarmId, onClose)
       }.apply {
         layoutParams = LinearLayout.LayoutParams(
@@ -186,10 +225,11 @@ object AlarmOverlayUi {
     label: String,
     background: Int,
     textColor: Int,
+    heightDp: Int = 56,
     onClick: () -> Unit,
   ): TextView {
     val density = context.resources.displayMetrics.density
-    val height = (56 * density).toInt()
+    val height = (heightDp * density).toInt()
     val radius = (14 * density).toInt()
     return TextView(context).apply {
       text = label

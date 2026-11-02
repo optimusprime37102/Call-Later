@@ -1,19 +1,15 @@
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { ReminderCard } from '@/src/components/ReminderCard';
+import {
+  HomeFilter,
+  HomeReminderTabs,
+} from '@/src/components/HomeReminderTabs';
 import { EmptyState } from '@/src/components/ui/EmptyState';
-import { SectionHeader } from '@/src/components/ui/SectionHeader';
 import { AppText } from '@/src/components/ui/AppText';
 import { useDialog } from '@/src/context/DialogContext';
 import { useReminders } from '@/src/context/RemindersContext';
@@ -35,12 +31,19 @@ function greetingForNow(now = new Date()): string {
   return 'Good evening';
 }
 
+function preferredFilter(counts: Record<HomeFilter, number>): HomeFilter {
+  if (counts.overdue > 0) return 'overdue';
+  if (counts.today > 0) return 'today';
+  return 'upcoming';
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { colors, colorScheme } = useAppTheme();
   const { alert } = useDialog();
   const { grouped, pending, isLoading, refresh, error } = useReminders();
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<HomeFilter | null>(null);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -49,33 +52,34 @@ export default function HomeScreen() {
   }, [refresh]);
 
   const nextUp = useMemo(() => {
-    const pool = [...grouped.overdue, ...grouped.today, ...grouped.upcoming];
+    const pool = [...grouped.today, ...grouped.upcoming];
     if (pool.length === 0) return null;
-    return pool.reduce((earliest, item) =>
-      item.scheduledAt < earliest.scheduledAt ? item : earliest,
+    return pool.reduce((soonest, item) =>
+      item.scheduledAt < soonest.scheduledAt ? item : soonest,
     );
   }, [grouped]);
 
-  const listGroups = useMemo(() => {
+  const lists = useMemo(() => {
     const excludeId = nextUp?.id;
-    const filter = (items: Reminder[]) =>
+    const withoutNext = (items: Reminder[]) =>
       excludeId ? items.filter((r) => r.id !== excludeId) : items;
     return {
-      overdue: filter(grouped.overdue),
-      today: filter(grouped.today),
-      upcoming: filter(grouped.upcoming),
+      overdue: grouped.overdue,
+      today: withoutNext(grouped.today),
+      upcoming: withoutNext(grouped.upcoming),
     };
   }, [grouped, nextUp?.id]);
 
-  const stats = useMemo(
+  const chipCounts = useMemo(
     () => ({
       overdue: grouped.overdue.length,
       today: grouped.today.length,
       upcoming: grouped.upcoming.length,
-      total: pending.length,
     }),
-    [grouped, pending.length],
+    [grouped],
   );
+
+  const activeFilter = filter ?? preferredFilter(chipCounts);
 
   const handleCall = async (reminder: Reminder) => {
     try {
@@ -93,15 +97,27 @@ export default function HomeScreen() {
     grouped.today.length > 0 ||
     grouped.upcoming.length > 0;
 
-  const hasListItems =
-    listGroups.overdue.length > 0 ||
-    listGroups.today.length > 0 ||
-    listGroups.upcoming.length > 0;
-
   const gradientColors: [string, string, string] =
     colorScheme === 'dark'
       ? [palette.teal800, '#0B3D3A', palette.ink900]
       : [palette.teal700, palette.teal800, '#0F4C48'];
+
+  const filterEmptyCopy = {
+    overdue: {
+      title: 'No overdue calls',
+      description: 'You’re caught up. Upcoming reminders stay under Today and Later.',
+    },
+    today: {
+      title: 'Nothing else today',
+      description: nextUp
+        ? 'Your next call is highlighted above.'
+        : 'Schedule a callback for later today.',
+    },
+    upcoming: {
+      title: 'Nothing later',
+      description: 'No reminders scheduled after today.',
+    },
+  };
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -116,72 +132,27 @@ export default function HomeScreen() {
         end={{ x: 0.8, y: 1 }}
       />
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: insets.top + spacing.lg,
-            paddingBottom: tabBarContentInset(insets.bottom) + spacing.xxxl,
-          },
-        ]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing || isLoading}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        <Animated.View entering={FadeIn.duration(320)} style={styles.header}>
-          <View style={styles.headerTop}>
-            <View style={styles.headerCopy}>
-              <AppText variant="label" tone="primary">
-                {greetingForNow().toUpperCase()}
+      <View style={[styles.body, { paddingTop: insets.top + spacing.lg }]}>
+        <Animated.View entering={FadeIn.duration(280)} style={styles.header}>
+          <AppText variant="label" tone="primary">
+            {greetingForNow().toUpperCase()}
+          </AppText>
+          <View style={styles.titleRow}>
+            <AppText variant="display" style={styles.title}>
+              Callbacks
+            </AppText>
+            {chipCounts.overdue > 0 ? (
+              <View style={[styles.alertPill, { backgroundColor: colors.dangerMuted }]}>
+                <AppText variant="caption" tone="danger">
+                  {chipCounts.overdue} overdue
+                </AppText>
+              </View>
+            ) : pending.length > 0 ? (
+              <AppText variant="caption" tone="muted">
+                {pending.length} open
               </AppText>
-              <AppText variant="display" style={styles.title}>
-                Callbacks
-              </AppText>
-              <AppText variant="callout" tone="secondary">
-                {stats.total === 0
-                  ? 'Schedule your next call when you’re ready.'
-                  : `${stats.total} open · ${stats.overdue} overdue · ${stats.today} today`}
-              </AppText>
-            </View>
-            <View
-              style={[
-                styles.brandMark,
-                {
-                  backgroundColor: colors.primaryMuted,
-                  borderColor:
-                    colorScheme === 'dark'
-                      ? 'rgba(45,212,191,0.22)'
-                      : 'rgba(13,148,136,0.18)',
-                },
-              ]}
-            >
-              <Ionicons name="call" size={18} color={colors.primary} />
-            </View>
+            ) : null}
           </View>
-
-          {stats.total > 0 ? (
-            <View
-              style={[
-                styles.statRail,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.borderSubtle,
-                },
-              ]}
-            >
-              <StatCell label="Overdue" value={stats.overdue} tone="danger" />
-              <View style={[styles.statDivider, { backgroundColor: colors.borderSubtle }]} />
-              <StatCell label="Today" value={stats.today} tone="primary" />
-              <View style={[styles.statDivider, { backgroundColor: colors.borderSubtle }]} />
-              <StatCell label="Later" value={stats.upcoming} tone="muted" />
-            </View>
-          ) : null}
         </Animated.View>
 
         {error ? (
@@ -203,7 +174,7 @@ export default function HomeScreen() {
         ) : (
           <>
             {nextUp ? (
-              <Animated.View entering={FadeInDown.delay(60).springify()}>
+              <Animated.View entering={FadeInDown.delay(40).springify()}>
                 <NextUpCard
                   reminder={nextUp}
                   gradientColors={gradientColors}
@@ -211,70 +182,44 @@ export default function HomeScreen() {
                   onCall={() => void handleCall(nextUp)}
                 />
               </Animated.View>
+            ) : chipCounts.overdue > 0 ? (
+              <Animated.View entering={FadeInDown.delay(40).springify()}>
+                <View
+                  style={[
+                    styles.overdueBanner,
+                    {
+                      backgroundColor: colors.dangerMuted,
+                      borderColor:
+                        colorScheme === 'dark'
+                          ? 'rgba(240,89,90,0.28)'
+                          : 'rgba(225,29,72,0.16)',
+                    },
+                  ]}
+                >
+                  <Ionicons name="alert-circle" size={18} color={colors.danger} />
+                  <AppText variant="callout" tone="danger" style={{ flex: 1 }}>
+                    {chipCounts.overdue} call{chipCounts.overdue === 1 ? '' : 's'} waiting —
+                    clear overdue below
+                  </AppText>
+                </View>
+              </Animated.View>
             ) : null}
 
-            {hasListItems ? (
-              <>
-                {listGroups.overdue.length > 0 ? (
-                  <View>
-                    <SectionHeader
-                      title="Overdue"
-                      count={listGroups.overdue.length}
-                      tone="danger"
-                    />
-                    {listGroups.overdue.map((reminder, index) => (
-                      <ReminderCard
-                        key={reminder.id}
-                        reminder={reminder}
-                        index={index}
-                        onPress={() => router.push(`/reminder/${reminder.id}`)}
-                        onCall={() => void handleCall(reminder)}
-                      />
-                    ))}
-                  </View>
-                ) : null}
-
-                {listGroups.today.length > 0 ? (
-                  <View>
-                    <SectionHeader
-                      title="Today"
-                      count={listGroups.today.length}
-                      tone="primary"
-                    />
-                    {listGroups.today.map((reminder, index) => (
-                      <ReminderCard
-                        key={reminder.id}
-                        reminder={reminder}
-                        index={index}
-                        onPress={() => router.push(`/reminder/${reminder.id}`)}
-                        onCall={() => void handleCall(reminder)}
-                      />
-                    ))}
-                  </View>
-                ) : null}
-
-                {listGroups.upcoming.length > 0 ? (
-                  <View>
-                    <SectionHeader
-                      title="Upcoming"
-                      count={listGroups.upcoming.length}
-                    />
-                    {listGroups.upcoming.map((reminder, index) => (
-                      <ReminderCard
-                        key={reminder.id}
-                        reminder={reminder}
-                        index={index}
-                        onPress={() => router.push(`/reminder/${reminder.id}`)}
-                        onCall={() => void handleCall(reminder)}
-                      />
-                    ))}
-                  </View>
-                ) : null}
-              </>
-            ) : null}
+            <HomeReminderTabs
+              activeFilter={activeFilter}
+              onFilterChange={setFilter}
+              counts={chipCounts}
+              lists={lists}
+              emptyCopy={filterEmptyCopy}
+              refreshing={refreshing || isLoading}
+              onRefresh={() => void onRefresh()}
+              contentBottomInset={tabBarContentInset(insets.bottom) + spacing.xxxl}
+              onOpenReminder={(id) => router.push(`/reminder/${id}`)}
+              onCallReminder={(reminder) => void handleCall(reminder)}
+            />
           </>
         )}
-      </ScrollView>
+      </View>
 
       <Pressable
         accessibilityRole="button"
@@ -363,41 +308,16 @@ function NextUpCard({
           {formatReminderWhen(reminder.scheduledAt)} ·{' '}
           {formatRelativeStatus(reminder.scheduledAt)}
         </AppText>
-        {reminder.notes ? (
-          <AppText variant="caption" style={styles.nextNotes} numberOfLines={2}>
-            {reminder.notes}
-          </AppText>
-        ) : null}
       </LinearGradient>
     </Pressable>
   );
 }
 
-function StatCell({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: 'danger' | 'primary' | 'muted';
-}) {
-  const textTone = tone === 'muted' ? 'secondary' : tone;
-
-  return (
-    <View style={styles.statCell}>
-      <AppText variant="headline" tone={textTone}>
-        {value}
-      </AppText>
-      <AppText variant="caption" tone="muted">
-        {label}
-      </AppText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
+    flex: 1,
+  },
+  body: {
     flex: 1,
   },
   heroWash: {
@@ -407,59 +327,41 @@ const styles = StyleSheet.create({
     right: 0,
     height: 280,
   },
-  content: {
-    flexGrow: 1,
-  },
   header: {
     paddingHorizontal: spacing.xxl,
     marginBottom: spacing.lg,
-    gap: spacing.lg,
   },
-  headerTop: {
+  titleRow: {
+    marginTop: spacing.xs,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
   },
-  headerCopy: {
-    flex: 1,
-  },
   title: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
+    flexShrink: 1,
   },
-  brandMark: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    marginTop: spacing.xs,
-  },
-  statRail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-  },
-  statCell: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  statDivider: {
-    width: StyleSheet.hairlineWidth * 2,
-    height: 28,
-    borderRadius: 1,
+  alertPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.full,
   },
   errorBanner: {
     marginHorizontal: spacing.xxl,
     marginBottom: spacing.md,
     padding: spacing.md,
     borderRadius: radius.md,
+  },
+  overdueBanner: {
+    marginHorizontal: spacing.xxl,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   nextWrap: {
     marginHorizontal: spacing.xxl,
@@ -468,18 +370,19 @@ const styles = StyleSheet.create({
   },
   nextCard: {
     borderRadius: radius.xl,
-    padding: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
     overflow: 'hidden',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   nextGlow: {
     position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     backgroundColor: 'rgba(45, 212, 191, 0.22)',
-    top: -40,
-    right: -30,
+    top: -36,
+    right: -28,
   },
   nextTop: {
     flexDirection: 'row',
@@ -519,10 +422,6 @@ const styles = StyleSheet.create({
   },
   nextMeta: {
     color: 'rgba(232, 238, 242, 0.82)',
-  },
-  nextNotes: {
-    color: 'rgba(184, 205, 216, 0.78)',
-    marginTop: spacing.xs,
   },
   fab: {
     position: 'absolute',

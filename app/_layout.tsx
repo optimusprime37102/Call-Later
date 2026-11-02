@@ -2,9 +2,11 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { View } from 'react-native';
 import 'react-native-reanimated';
 
 import { SplashView } from '@/src/components/SplashView';
+import { StatusBarBackdrop } from '@/src/components/StatusBarBackdrop';
 import { AlarmOverlayProvider } from '@/src/context/AlarmOverlayContext';
 import { DialogProvider } from '@/src/context/DialogContext';
 import { RemindersProvider, useReminders } from '@/src/context/RemindersContext';
@@ -26,7 +28,7 @@ function NotificationBridge() {
 }
 
 function AppBootstrap({ children }: { children: React.ReactNode }) {
-  const { isReady: themeReady, colorScheme } = useAppTheme();
+  const { isReady: themeReady } = useAppTheme();
   const { isReady: remindersReady } = useReminders();
   const [minTimeDone, setMinTimeDone] = useState(false);
 
@@ -49,8 +51,11 @@ function AppBootstrap({ children }: { children: React.ReactNode }) {
     <DialogProvider>
       <AlarmOverlayProvider>
         <NotificationBridge />
-        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-        {children}
+        <View style={{ flex: 1 }}>
+          <StatusBar style="light" />
+          <StatusBarBackdrop />
+          {children}
+        </View>
       </AlarmOverlayProvider>
     </DialogProvider>
   );
@@ -75,7 +80,7 @@ function RootNavigator() {
     <Stack
       screenOptions={{
         headerShadowVisible: false,
-        headerStyle: { backgroundColor: colors.background },
+        headerStyle: { backgroundColor: colors.surface },
         headerTintColor: colors.primary,
         headerTitleStyle: {
           color: colors.text,
@@ -99,6 +104,13 @@ function RootNavigator() {
         name="reminder/[id]"
         options={{
           title: 'Reminder',
+        }}
+      />
+      <Stack.Screen
+        name="privacy"
+        options={{
+          title: 'Privacy Policy',
+          presentation: 'modal',
         }}
       />
     </Stack>

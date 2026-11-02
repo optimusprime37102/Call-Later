@@ -66,7 +66,7 @@ export function AppDialog({ visible, config, onClose }: AppDialogProps) {
       >
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <Animated.View
-          entering={FadeInDown.springify().damping(18)}
+          entering={FadeInDown.duration(180)}
           style={[
             styles.card,
             shadows.float,

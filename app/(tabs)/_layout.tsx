@@ -42,7 +42,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="completed"
         options={{
-          title: 'Done',
+          title: 'Completed',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'checkmark-done' : 'checkmark-done-outline'}

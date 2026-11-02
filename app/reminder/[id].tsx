@@ -1,11 +1,16 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { SnoozeSheet } from '@/src/components/SnoozeSheet';
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
@@ -20,11 +25,12 @@ import {
   formatReminderWhen,
   isOverdue,
 } from '@/src/utils/dates';
-import { radius, shadows, spacing } from '@/src/theme/tokens';
+import { palette, radius, shadows, spacing } from '@/src/theme/tokens';
 
 export default function ReminderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors, settings } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { colors, colorScheme, settings } = useAppTheme();
   const { alert, confirm } = useDialog();
   const {
     getById,
@@ -141,116 +147,359 @@ export default function ReminderDetailScreen() {
   }
 
   const overdue = reminder.status === 'pending' && isOverdue(reminder.scheduledAt);
+  const pending = reminder.status === 'pending';
 
   return (
     <>
-      <Stack.Screen options={{ title: reminder.contactName }} />
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={styles.content}
-      >
-        <View
-          style={[
-            styles.hero,
-            shadows.soft,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.borderSubtle,
-            },
+      <Stack.Screen
+        options={{
+          title: 'Reminder',
+          headerStyle: {
+            backgroundColor:
+              colorScheme === 'dark' ? palette.ink900 : palette.teal800,
+          },
+          headerTintColor: palette.mist50,
+          headerTitleStyle: {
+            color: palette.mist50,
+            fontWeight: '700',
+            fontSize: 17,
+          },
+        }}
+      />
+      <View style={[styles.screen, { backgroundColor: colors.background }]}>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: insets.bottom + spacing.huge },
           ]}
+          showsVerticalScrollIndicator={false}
         >
-          <View style={[styles.avatar, { backgroundColor: colors.primaryMuted }]}>
-            <AppText variant="title" tone="primary">
-              {reminder.contactName.charAt(0).toUpperCase()}
-            </AppText>
-          </View>
-          <AppText variant="title" style={{ textAlign: 'center' }}>
-            {reminder.contactName}
-          </AppText>
-          <AppText variant="body" tone="secondary">
-            {reminder.phoneNumber}
-          </AppText>
-          <View
-            style={[
-              styles.metaPill,
-              {
-                backgroundColor: overdue ? colors.dangerMuted : colors.backgroundSecondary,
-              },
-            ]}
-          >
-            <Ionicons
-              name={overdue ? 'alert-circle' : 'time-outline'}
-              size={16}
-              color={overdue ? colors.danger : colors.textMuted}
-            />
-            <AppText variant="callout" tone={overdue ? 'danger' : 'secondary'}>
-              {reminder.status === 'completed' && reminder.completedAt
-                ? `Completed · ${formatReminderWhen(reminder.completedAt)}`
-                : `${formatReminderWhen(reminder.scheduledAt)} · ${formatRelativeStatus(reminder.scheduledAt)}`}
-            </AppText>
-          </View>
-          {reminder.notes ? (
-            <View style={[styles.notes, { backgroundColor: colors.inputBackground }]}>
-              <AppText variant="label" tone="muted">
-                NOTES
-              </AppText>
-              <AppText variant="body" style={{ marginTop: 6 }}>
-                {reminder.notes}
-              </AppText>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.actions}>
-          <Button
-            label="Call Now"
-            onPress={() => void handleCall()}
-            icon={<Ionicons name="call" size={18} color={colors.primaryText} />}
-            disabled={busy}
-          />
-
-          {reminder.status === 'pending' ? (
-            <>
-              <Button
-                label="Snooze"
-                variant="secondary"
-                onPress={() => setSnoozeOpen(true)}
-                disabled={busy}
+          <Animated.View entering={FadeIn.duration(280)} style={styles.heroWrap}>
+            <LinearGradient
+              colors={
+                colorScheme === 'dark'
+                  ? ['#12352F', '#0F2A28', palette.ink900]
+                  : ['#F3FBFA', '#E5F5F2', '#D8EFEB']
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[
+                styles.heroPanel,
+                shadows.soft,
+                {
+                  borderColor:
+                    colorScheme === 'dark'
+                      ? 'rgba(45,212,191,0.18)'
+                      : 'rgba(13,148,136,0.16)',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.heroOrb,
+                  styles.heroOrbOne,
+                  {
+                    backgroundColor:
+                      colorScheme === 'dark'
+                        ? 'rgba(45,212,191,0.14)'
+                        : 'rgba(45,212,191,0.22)',
+                  },
+                ]}
               />
-              <Button
-                label="Reschedule / Edit"
-                variant="secondary"
+              <View
+                style={[
+                  styles.heroOrb,
+                  styles.heroOrbTwo,
+                  {
+                    backgroundColor:
+                      colorScheme === 'dark'
+                        ? 'rgba(255,255,255,0.06)'
+                        : 'rgba(15,118,110,0.08)',
+                  },
+                ]}
+              />
+              <View
+                style={[
+                  styles.heroOrb,
+                  styles.heroOrbThree,
+                  {
+                    backgroundColor:
+                      colorScheme === 'dark'
+                        ? 'rgba(45,212,191,0.16)'
+                        : 'rgba(20,184,166,0.18)',
+                  },
+                ]}
+              />
+              <View style={styles.heroGrid}>
+                {Array.from({ length: 18 }).map((_, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.heroGridDot,
+                      {
+                        backgroundColor:
+                          colorScheme === 'dark'
+                            ? 'rgba(244,247,249,0.35)'
+                            : 'rgba(15,118,110,0.28)',
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+
+              <View
+                style={[
+                  styles.avatarRing,
+                  {
+                    backgroundColor:
+                      colorScheme === 'dark'
+                        ? 'rgba(255,255,255,0.10)'
+                        : palette.white,
+                    borderColor:
+                      colorScheme === 'dark'
+                        ? 'rgba(45,212,191,0.24)'
+                        : 'rgba(13,148,136,0.18)',
+                  },
+                ]}
+              >
+                <AppText
+                  variant="display"
+                  style={{
+                    color:
+                      colorScheme === 'dark' ? palette.mist50 : colors.primary,
+                  }}
+                >
+                  {reminder.contactName.charAt(0).toUpperCase()}
+                </AppText>
+              </View>
+
+              <AppText
+                variant="title"
+                style={[
+                  styles.name,
+                  {
+                    color:
+                      colorScheme === 'dark' ? palette.mist50 : colors.text,
+                  },
+                ]}
+              >
+                {reminder.contactName}
+              </AppText>
+              <AppText
+                variant="body"
+                style={{
+                  color:
+                    colorScheme === 'dark'
+                      ? 'rgba(232,238,242,0.78)'
+                      : colors.textSecondary,
+                }}
+              >
+                {reminder.phoneNumber}
+              </AppText>
+
+              <View
+                style={[
+                  styles.metaPill,
+                  {
+                    backgroundColor: overdue
+                      ? colorScheme === 'dark'
+                        ? 'rgba(240, 89, 90, 0.28)'
+                        : 'rgba(225, 29, 72, 0.18)'
+                      : reminder.status === 'completed'
+                        ? colorScheme === 'dark'
+                          ? 'rgba(37, 99, 235, 0.24)'
+                          : 'rgba(37, 99, 235, 0.14)'
+                        : colorScheme === 'dark'
+                          ? 'rgba(245, 158, 11, 0.22)'
+                          : 'rgba(217, 119, 6, 0.16)',
+                    borderColor: overdue
+                      ? 'transparent'
+                      : reminder.status === 'completed'
+                        ? 'transparent'
+                        : colorScheme === 'dark'
+                          ? 'rgba(245, 158, 11, 0.35)'
+                          : 'rgba(217, 119, 6, 0.28)',
+                    borderWidth:
+                      !overdue && reminder.status !== 'completed'
+                        ? StyleSheet.hairlineWidth * 2
+                        : 0,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    overdue
+                      ? 'alert-circle'
+                      : reminder.status === 'completed'
+                        ? 'checkmark-circle'
+                        : 'time-outline'
+                  }
+                  size={16}
+                  color={
+                    overdue
+                      ? colors.danger
+                      : reminder.status === 'completed'
+                        ? '#2563EB'
+                        : colors.warning
+                  }
+                />
+                <AppText
+                  variant="callout"
+                  tone={
+                    overdue
+                      ? 'danger'
+                      : reminder.status === 'completed'
+                        ? 'default'
+                        : 'warning'
+                  }
+                  style={
+                    reminder.status === 'completed'
+                      ? { color: '#2563EB' }
+                      : undefined
+                  }
+                >
+                  {reminder.status === 'completed' && reminder.completedAt
+                    ? `Completed · ${formatReminderWhen(reminder.completedAt)}`
+                    : `${formatReminderWhen(reminder.scheduledAt)} · ${formatRelativeStatus(reminder.scheduledAt)}`}
+                </AppText>
+              </View>
+            </LinearGradient>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(40).springify()} style={styles.callBlock}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Call ${reminder.contactName}`}
+              disabled={busy}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                void handleCall();
+              }}
+              style={({ pressed }) => [
+                styles.callButton,
+                shadows.float,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: busy ? 0.5 : pressed ? 0.92 : 1,
+                  transform: [{ scale: pressed && !busy ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              <View style={styles.callIconWrap}>
+                <Ionicons name="call" size={22} color={colors.primary} />
+              </View>
+              <View style={styles.callCopy}>
+                <AppText variant="bodyMedium" tone="inverse">
+                  Call now
+                </AppText>
+                <AppText variant="caption" style={styles.callSub}>
+                  Opens your phone dialer
+                </AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(80).springify()} style={styles.actionGrid}>
+            {pending ? (
+              <>
+                <ActionTile
+                  icon="time-outline"
+                  label="Snooze"
+                  color={colors.primary}
+                  background={colors.primaryMuted}
+                  disabled={busy}
+                  onPress={() => setSnoozeOpen(true)}
+                />
+                <ActionTile
+                  icon="calendar-outline"
+                  label="Edit"
+                  color={colors.primary}
+                  background={colors.primaryMuted}
+                  disabled={busy}
+                  onPress={() =>
+                    router.push({ pathname: '/schedule', params: { id: reminder.id } })
+                  }
+                />
+                <ActionTile
+                  icon="checkmark-circle-outline"
+                  label="Completed"
+                  color="#2563EB"
+                  background={
+                    colorScheme === 'dark'
+                      ? 'rgba(37, 99, 235, 0.14)'
+                      : 'rgba(37, 99, 235, 0.10)'
+                  }
+                  disabled={busy}
+                  onPress={handleComplete}
+                />
+              </>
+            ) : (
+              <ActionTile
+                icon="refresh-outline"
+                label="Reschedule"
+                color={colors.primary}
+                background={colors.primaryMuted}
+                disabled={busy}
                 onPress={() =>
                   router.push({ pathname: '/schedule', params: { id: reminder.id } })
                 }
-                disabled={busy}
+                wide
               />
-              <Button
-                label="Mark completed"
-                variant="success"
-                onPress={handleComplete}
-                disabled={busy}
-              />
-            </>
-          ) : (
-            <Button
-              label="Reschedule again"
-              variant="secondary"
-              onPress={() =>
-                router.push({ pathname: '/schedule', params: { id: reminder.id } })
-              }
-              disabled={busy}
-            />
-          )}
+            )}
+          </Animated.View>
 
-          <Button
-            label="Delete"
-            variant="danger"
-            onPress={handleDelete}
-            disabled={busy}
-          />
-        </View>
-      </ScrollView>
+          {reminder.notes ? (
+            <Animated.View
+              entering={FadeInDown.delay(110).springify()}
+              style={[
+                styles.notesCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              <AppText variant="label" tone="muted">
+                NOTES
+              </AppText>
+              <AppText variant="body" style={styles.notesBody}>
+                {reminder.notes}
+              </AppText>
+            </Animated.View>
+          ) : null}
+
+          <Animated.View entering={FadeInDown.delay(140).springify()}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete reminder"
+              disabled={busy}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                handleDelete();
+              }}
+              style={({ pressed }) => [
+                styles.deleteButton,
+                {
+                  backgroundColor:
+                    colorScheme === 'dark'
+                      ? 'rgba(240, 89, 90, 0.08)'
+                      : 'rgba(225, 29, 72, 0.04)',
+                  borderColor: colors.danger,
+                  opacity: busy ? 0.45 : pressed ? 0.82 : 1,
+                  transform: [{ scale: pressed && !busy ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+              <AppText variant="bodyMedium" tone="danger">
+                Delete reminder
+              </AppText>
+            </Pressable>
+          </Animated.View>
+        </ScrollView>
+      </View>
 
       <SnoozeSheet
         visible={snoozeOpen}
@@ -262,7 +511,60 @@ export default function ReminderDetailScreen() {
   );
 }
 
+function ActionTile({
+  icon,
+  label,
+  color,
+  background,
+  onPress,
+  disabled,
+  wide,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  color: string;
+  background: string;
+  onPress: () => void;
+  disabled?: boolean;
+  wide?: boolean;
+}) {
+  const { colors } = useAppTheme();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={() => {
+        void Haptics.selectionAsync();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.tile,
+        wide ? styles.tileWide : null,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.borderSubtle,
+          opacity: disabled ? 0.45 : pressed ? 0.88 : 1,
+          transform: [{ scale: pressed && !disabled ? 0.97 : 1 }],
+        },
+      ]}
+    >
+      <View style={[styles.tileIcon, { backgroundColor: background }]}>
+        <Ionicons name={icon} size={20} color={color} />
+      </View>
+      <AppText variant="callout">{label}</AppText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  flex: {
+    flex: 1,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -270,24 +572,71 @@ const styles = StyleSheet.create({
     padding: spacing.xxl,
   },
   content: {
-    padding: spacing.xxl,
+    paddingHorizontal: spacing.xxl,
+    paddingTop: spacing.lg,
     gap: spacing.xl,
-    paddingBottom: spacing.huge,
   },
-  hero: {
+  heroWrap: {
     borderRadius: radius.xl,
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    padding: spacing.xxl,
+  },
+  heroPanel: {
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  avatar: {
-    width: 72,
-    height: 72,
     borderRadius: radius.xl,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xl,
+    overflow: 'hidden',
+  },
+  heroOrb: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  heroOrbOne: {
+    width: 180,
+    height: 180,
+    top: -60,
+    right: -40,
+  },
+  heroOrbTwo: {
+    width: 120,
+    height: 120,
+    bottom: -36,
+    left: -28,
+  },
+  heroOrbThree: {
+    width: 64,
+    height: 64,
+    top: 48,
+    left: 28,
+  },
+  heroGrid: {
+    position: 'absolute',
+    top: 18,
+    right: 18,
+    width: 54,
+    height: 54,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  heroGridDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  avatarRing: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth * 2,
     marginBottom: spacing.sm,
+  },
+  name: {
+    textAlign: 'center',
   },
   metaPill: {
     flexDirection: 'row',
@@ -298,13 +647,79 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radius.full,
   },
-  notes: {
-    alignSelf: 'stretch',
-    marginTop: spacing.lg,
-    padding: spacing.lg,
-    borderRadius: radius.md,
+  callBlock: {
+    marginTop: spacing.xs,
   },
-  actions: {
+  callButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.xl,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    minHeight: 72,
+  },
+  callIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.white,
+  },
+  callCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  callSub: {
+    color: 'rgba(255,255,255,0.72)',
+  },
+  actionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  tile: {
+    flex: 1,
+    minWidth: '28%',
+    alignItems: 'center',
     gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+  },
+  tileWide: {
+    minWidth: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+  },
+  tileIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notesCard: {
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  notesBody: {
+    marginTop: 2,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 52,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
   },
 });

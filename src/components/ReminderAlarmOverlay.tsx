@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
+import LottieView from 'lottie-react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { AppText } from '@/src/components/ui/AppText';
 import { useReminders } from '@/src/context/RemindersContext';
@@ -19,6 +20,8 @@ import { openDialer } from '@/src/services/dialer';
 import { SnoozeDurationMinutes } from '@/src/types/settings';
 import { formatRelativeStatus, formatReminderWhen } from '@/src/utils/dates';
 import { radius, spacing } from '@/src/theme/tokens';
+
+const incomingCallAnim = require('../../assets/anim/incoming-call.json');
 
 const SNOOZE_OPTIONS: { minutes: SnoozeDurationMinutes; label: string }[] = [
   { minutes: 10, label: '10m' },
@@ -157,7 +160,7 @@ export function ReminderAlarmOverlay({
           </Pressable>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.hero}>
+        <Animated.View entering={FadeInDown.duration(220)} style={styles.hero}>
           <View style={styles.avatar}>
             <AppText variant="display" style={styles.avatarLetter}>
               {contactName.charAt(0).toUpperCase() || '?'}
@@ -175,6 +178,16 @@ export function ReminderAlarmOverlay({
               {formatReminderWhen(scheduledAt)} · {formatRelativeStatus(scheduledAt)}
             </AppText>
           </View>
+
+          <View style={styles.animWrap}>
+            <LottieView
+              source={incomingCallAnim}
+              autoPlay
+              loop
+              style={styles.anim}
+            />
+          </View>
+
           {notes ? (
             <View style={styles.notesCard}>
               <AppText variant="label" style={styles.notesLabel}>
@@ -193,30 +206,6 @@ export function ReminderAlarmOverlay({
         </Animated.View>
 
         <View style={styles.actions}>
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy || !phoneNumber}
-            onPress={() => void handleCall()}
-            style={({ pressed }) => [
-              styles.callButton,
-              {
-                backgroundColor: colors.primary,
-                opacity: busy || !phoneNumber ? 0.5 : pressed ? 0.9 : 1,
-              },
-            ]}
-          >
-            {busy ? (
-              <ActivityIndicator color={colors.primaryText} />
-            ) : (
-              <>
-                <Ionicons name="call" size={20} color={colors.primaryText} />
-                <AppText variant="bodyMedium" style={{ color: colors.primaryText }}>
-                  Call Now
-                </AppText>
-              </>
-            )}
-          </Pressable>
-
           <AppText variant="caption" style={styles.snoozeLabel}>
             Snooze
           </AppText>
@@ -252,19 +241,49 @@ export function ReminderAlarmOverlay({
             })}
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy || !reminderId}
-            onPress={() => void handleComplete()}
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              { opacity: busy || !reminderId ? 0.5 : pressed ? 0.85 : 1 },
-            ]}
-          >
-            <AppText variant="bodyMedium" style={styles.secondaryLabel}>
-              Mark completed
-            </AppText>
-          </Pressable>
+          <View style={styles.primaryRow}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy || !phoneNumber}
+              onPress={() => void handleCall()}
+              style={({ pressed }) => [
+                styles.callButton,
+                {
+                  backgroundColor: '#40E088',
+                  opacity: busy || !phoneNumber ? 0.5 : pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="call" size={18} color="#FFFFFF" />
+                  <AppText variant="bodyMedium" style={{ color: '#FFFFFF' }}>
+                    Call Now
+                  </AppText>
+                </>
+              )}
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy || !reminderId}
+              onPress={() => void handleComplete()}
+              style={({ pressed }) => [
+                styles.completeButton,
+                {
+                  backgroundColor: '#2563EB',
+                  opacity: busy || !reminderId ? 0.5 : pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+              <AppText variant="bodyMedium" style={styles.completeLabel}>
+                Completed
+              </AppText>
+            </Pressable>
+          </View>
 
           <Pressable
             accessibilityRole="button"
@@ -325,20 +344,20 @@ const styles = StyleSheet.create({
   hero: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: spacing.sm,
-    paddingBottom: spacing.xxl,
+    paddingBottom: spacing.lg,
   },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 32,
+    width: 88,
+    height: 88,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(45, 212, 191, 0.16)',
     borderWidth: StyleSheet.hairlineWidth * 2,
     borderColor: 'rgba(45, 212, 191, 0.35)',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   avatarLetter: {
     color: '#2DD4BF',
@@ -356,7 +375,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.full,
@@ -365,9 +384,20 @@ const styles = StyleSheet.create({
   metaText: {
     color: 'rgba(184, 205, 216, 0.9)',
   },
+  animWrap: {
+    marginTop: spacing.lg,
+    width: '100%',
+    height: 260,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  anim: {
+    width: 300,
+    height: 260,
+  },
   notesCard: {
     alignSelf: 'stretch',
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
     padding: spacing.lg,
     borderRadius: radius.lg,
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -390,7 +420,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingBottom: spacing.sm,
   },
+  primaryRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   callButton: {
+    flex: 1.15,
     minHeight: 56,
     borderRadius: radius.md,
     alignItems: 'center',
@@ -398,16 +433,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  completeButton: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  completeLabel: {
+    color: '#FFFFFF',
+  },
   snoozeLabel: {
     color: 'rgba(184, 205, 216, 0.7)',
-    marginTop: spacing.sm,
     marginBottom: 2,
     textAlign: 'center',
   },
   snoozeRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   snoozeChip: {
     flex: 1,
@@ -416,18 +462,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,
-  },
-  secondaryButton: {
-    minHeight: 52,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  secondaryLabel: {
-    color: '#F4F7F9',
   },
   dismissButton: {
     minHeight: 48,

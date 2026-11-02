@@ -120,6 +120,8 @@ export type ColorSchemeName = 'light' | 'dark';
 export interface ThemeColors {
   background: string;
   backgroundSecondary: string;
+  /** Solid tint behind the system status bar + stack headers (app-wide). */
+  chrome: string;
   surface: string;
   surfaceElevated: string;
   border: string;
@@ -152,6 +154,7 @@ export const themes: Record<ColorSchemeName, ThemeColors> = {
   light: {
     background: palette.mist50,
     backgroundSecondary: palette.mist100,
+    chrome: palette.ink950,
     surface: palette.white,
     surfaceElevated: palette.white,
     border: palette.mist200,
@@ -182,6 +185,7 @@ export const themes: Record<ColorSchemeName, ThemeColors> = {
   dark: {
     background: palette.ink950,
     backgroundSecondary: palette.ink900,
+    chrome: '#0C2A28',
     surface: palette.ink800,
     surfaceElevated: palette.ink700,
     border: '#243746',

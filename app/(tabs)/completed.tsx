@@ -42,16 +42,8 @@ export default function CompletedScreen() {
         }
       >
         <View style={styles.header}>
-          <AppText variant="label" tone="primary">
-            HISTORY
-          </AppText>
           <AppText variant="display" style={styles.title}>
             Completed
-          </AppText>
-          <AppText variant="callout" tone="secondary">
-            {completed.length === 0
-              ? 'Calls you’ve already marked done.'
-              : `${completed.length} finished callback${completed.length === 1 ? '' : 's'}.`}
           </AppText>
         </View>
 
@@ -87,7 +79,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   title: {
-    marginTop: spacing.xs,
     marginBottom: spacing.sm,
   },
 });

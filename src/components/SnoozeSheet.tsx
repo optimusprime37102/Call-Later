@@ -38,7 +38,7 @@ export function SnoozeSheet({
       >
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <Animated.View
-          entering={FadeInUp.springify().damping(18)}
+          entering={FadeInUp.duration(180)}
           style={[
             styles.sheet,
             {
