@@ -1,5 +1,5 @@
-import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo-modules-core';
+import { Platform } from 'react-native';
 
 export type ScheduleAlarmParams = {
   id: string;
@@ -17,9 +17,22 @@ export type PendingAlarmActions = {
   snoozed: Record<string, number>;
 };
 
+export type AlarmFeedbackOptions = {
+  soundEnabled: boolean;
+  vibrateEnabled: boolean;
+  /** Full-screen overlay on/off — read at fire time by native AlarmReceiver. */
+  overlayEnabled?: boolean;
+};
+
+export type PendingReminderOpen = {
+  reminderId: string;
+  alarmId: string;
+};
+
 type CallLaterAlarmNative = {
   scheduleAlarm: (params: ScheduleAlarmParams) => Promise<string>;
   cancelAlarm: (id: string) => Promise<void>;
+  setAlarmFeedbackOptions: (params: AlarmFeedbackOptions) => Promise<void>;
   startAlarmFeedback: () => Promise<void>;
   stopAlarmFeedback: () => Promise<void>;
   canUseFullScreenIntent: () => Promise<boolean>;
@@ -27,6 +40,8 @@ type CallLaterAlarmNative = {
   canDrawOverlays: () => Promise<boolean>;
   openOverlaySettings: () => Promise<void>;
   consumePendingActions: () => Promise<PendingAlarmActions>;
+  dismissAlarmOverlay: (alarmId?: string | null) => Promise<void>;
+  consumePendingReminderOpen: () => Promise<PendingReminderOpen | null>;
 };
 
 function loadNative(): CallLaterAlarmNative | null {
@@ -48,6 +63,13 @@ export async function scheduleAlarm(params: ScheduleAlarmParams): Promise<string
 export async function cancelAlarm(id: string): Promise<void> {
   if (!native) return;
   await native.cancelAlarm(id);
+}
+
+export async function setAlarmFeedbackOptions(
+  options: AlarmFeedbackOptions,
+): Promise<void> {
+  if (!native) return;
+  await native.setAlarmFeedbackOptions(options);
 }
 
 export async function startAlarmFeedback(): Promise<void> {
@@ -86,6 +108,21 @@ export async function consumePendingActions(): Promise<PendingAlarmActions> {
   return {
     completedIds: result?.completedIds ?? [],
     snoozed: (result?.snoozed as Record<string, number>) ?? {},
+  };
+}
+
+export async function dismissAlarmOverlay(alarmId?: string | null): Promise<void> {
+  if (!native) return;
+  await native.dismissAlarmOverlay(alarmId ?? null);
+}
+
+export async function consumePendingReminderOpen(): Promise<PendingReminderOpen | null> {
+  if (!native) return null;
+  const result = await native.consumePendingReminderOpen();
+  if (!result?.reminderId) return null;
+  return {
+    reminderId: result.reminderId,
+    alarmId: result.alarmId ?? result.reminderId,
   };
 }
 

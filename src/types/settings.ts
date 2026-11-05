@@ -8,6 +8,10 @@ export interface AppSettings {
   notificationsEnabled: boolean;
   /** Full-screen alarm UI when a reminder notification fires or is opened */
   alarmOverlayEnabled: boolean;
+  /** Play looping alarm tone while the alert overlay is active */
+  alarmSoundEnabled: boolean;
+  /** Vibrate while the alert overlay is active */
+  alarmVibrateEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -15,4 +19,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultSnoozeMinutes: 10,
   notificationsEnabled: true,
   alarmOverlayEnabled: true,
+  alarmSoundEnabled: true,
+  alarmVibrateEnabled: true,
 };

@@ -16,7 +16,6 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import { ReminderCard } from '@/src/components/ReminderCard';
 import { AppText } from '@/src/components/ui/AppText';
 import { useAppTheme } from '@/src/context/ThemeContext';
@@ -55,6 +54,7 @@ interface HomeReminderTabsProps {
   contentBottomInset: number;
   onOpenReminder: (id: string) => void;
   onCallReminder: (reminder: Reminder) => void;
+  nextUpId?: string | null;
 }
 
 export function HomeReminderTabs({
@@ -68,6 +68,7 @@ export function HomeReminderTabs({
   contentBottomInset,
   onOpenReminder,
   onCallReminder,
+  nextUpId = null,
 }: HomeReminderTabsProps) {
   const { colors } = useAppTheme();
   const pagerRef = useRef<PagerView>(null);
@@ -104,7 +105,6 @@ export function HomeReminderTabs({
   const selectTab = (index: number) => {
     const tab = HOME_TABS[index];
     if (!tab || tab.key === activeFilter) return;
-    void Haptics.selectionAsync();
     onFilterChange(tab.key);
   };
 
@@ -210,7 +210,6 @@ export function HomeReminderTabs({
           const tab = HOME_TABS[index];
           if (!tab || tab.key === activeFilter) return;
           skipPagerSync.current = true;
-          void Haptics.selectionAsync();
           onFilterChange(tab.key);
         }}
       >
@@ -249,6 +248,7 @@ export function HomeReminderTabs({
                       key={reminder.id}
                       reminder={reminder}
                       index={index}
+                      isNextUp={reminder.id === nextUpId}
                       onPress={() => onOpenReminder(reminder.id)}
                       onCall={() => onCallReminder(reminder)}
                     />

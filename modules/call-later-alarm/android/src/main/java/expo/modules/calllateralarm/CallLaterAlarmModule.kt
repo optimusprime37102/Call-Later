@@ -31,7 +31,7 @@ class CallLaterAlarmModule : Module() {
         val alarmManager =
           context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
         if (!alarmManager.canScheduleExactAlarms()) {
-          throw Exception("Exact alarm permission is required for full-screen reminders")
+          throw Exception("Exact alarm permission is required for reliable reminders")
         }
       }
 
@@ -53,11 +53,14 @@ class CallLaterAlarmModule : Module() {
     AsyncFunction("cancelAlarm") { id: String ->
       val alarmId = id.removePrefix("native:")
       AlarmScheduler.cancel(context, alarmId)
-      try {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(alarmId.hashCode())
-      } catch (_: Exception) {
-      }
+      AlarmOverlayController.dismiss(context, alarmId)
+    }
+
+    AsyncFunction("setAlarmFeedbackOptions") { params: Map<String, Any?> ->
+      val soundEnabled = params["soundEnabled"] as? Boolean ?: true
+      val vibrateEnabled = params["vibrateEnabled"] as? Boolean ?: true
+      val overlayEnabled = params["overlayEnabled"] as? Boolean ?: true
+      AlarmFeedbackPrefs.set(context, soundEnabled, vibrateEnabled, overlayEnabled)
     }
 
     AsyncFunction("startAlarmFeedback") {
@@ -111,6 +114,14 @@ class CallLaterAlarmModule : Module() {
         "completedIds" to completed,
         "snoozed" to snoozed.mapValues { it.value.toDouble() },
       )
+    }
+
+    AsyncFunction("dismissAlarmOverlay") { alarmId: String? ->
+      AlarmOverlayController.dismiss(context, alarmId)
+    }
+
+    AsyncFunction("consumePendingReminderOpen") {
+      AlarmLaunchStore.consumePending(context)
     }
   }
 }

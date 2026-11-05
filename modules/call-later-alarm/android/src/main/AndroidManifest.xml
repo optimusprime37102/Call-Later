@@ -26,8 +26,20 @@
       android:taskAffinity=""
       android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
+    <activity
+      android:name=".OpenInAppReminderActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
     <service
       android:name=".AlarmOverlayService"
+      android:exported="false"
+      android:foregroundServiceType="mediaPlayback" />
+
+    <service
+      android:name=".ReminderAlarmService"
       android:exported="false"
       android:foregroundServiceType="mediaPlayback" />
   </application>

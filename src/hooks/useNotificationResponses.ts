@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
+import {
+  consumePendingReminderOpen,
+  dismissAlarmOverlay,
+} from 'call-later-alarm';
 import { useReminders } from '@/src/context/RemindersContext';
-import { useAppTheme } from '@/src/context/ThemeContext';
 import {
   ACTION_CALL_NOW,
   getSnoozeMinutesFromAction,
@@ -26,19 +30,32 @@ function readReminderData(notification: Notifications.Notification) {
 }
 
 /**
- * Handles notification action buttons / taps for the classic (non-overlay) path.
- * When full-screen alarm overlay is enabled, Android shows a native overlay
- * service/activity and does not open the React Native app.
+ * Notification taps (full-screen on or off) open reminder detail in-app.
+ * Any native overlay that was showing is dismissed automatically.
  */
 export function useNotificationResponses() {
   const { snooze, getById, refresh } = useReminders();
-  const { settings } = useAppTheme();
   const handlingRef = useRef(false);
 
   useEffect(() => {
-    // Native overlay owns the alarm UX — ignore JS handlers for those alarms.
-    if (settings.alarmOverlayEnabled) {
-      return;
+    async function openReminderDetail(reminderId: string, alarmId?: string | null) {
+      try {
+        await dismissAlarmOverlay(alarmId ?? reminderId);
+      } catch {
+        // Native module may be unavailable.
+      }
+      await refresh();
+      router.push(`/reminder/${reminderId}`);
+    }
+
+    async function consumeNativeTap() {
+      try {
+        const pending = await consumePendingReminderOpen();
+        if (!pending?.reminderId) return;
+        await openReminderDetail(pending.reminderId, pending.alarmId);
+      } catch (error) {
+        console.warn('Failed to consume pending reminder open', error);
+      }
     }
 
     async function handleResponse(response: Notifications.NotificationResponse) {
@@ -65,19 +82,23 @@ export function useNotificationResponses() {
               console.warn('Failed to open dialer from notification', error);
             }
           }
-          router.push(`/reminder/${reminderId}`);
+          await openReminderDetail(reminderId);
           return;
         }
 
         const snoozeMinutes = getSnoozeMinutesFromAction(actionId);
         if (snoozeMinutes != null) {
+          try {
+            await dismissAlarmOverlay(reminderId);
+          } catch {
+            // Ignore.
+          }
           await snooze(reminderId, snoozeMinutes);
           return;
         }
 
         if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-          await refresh();
-          router.push(`/reminder/${reminderId}`);
+          await openReminderDetail(reminderId);
         }
       } catch (error) {
         handledResponses.delete(key);
@@ -102,14 +123,17 @@ export function useNotificationResponses() {
       }
     });
 
+    void consumeNativeTap();
+    const onAppState = (state: AppStateStatus) => {
+      if (state === 'active') {
+        void consumeNativeTap();
+      }
+    };
+    const appStateSub = AppState.addEventListener('change', onAppState);
+
     return () => {
       responseSub.remove();
+      appStateSub.remove();
     };
-  }, [
-    getById,
-    refresh,
-    settings.alarmOverlayEnabled,
-    settings.defaultSnoozeMinutes,
-    snooze,
-  ]);
+  }, [getById, refresh, snooze]);
 }

@@ -14,27 +14,34 @@ object AlarmTonePlayer {
 
   @Synchronized
   fun start(context: Context) {
-    stop()
-    try {
-      val soundUri = Uri.parse("android.resource://${context.packageName}/raw/alarm")
-      player = MediaPlayer().apply {
-        setAudioAttributes(
-          AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build(),
-        )
-        setDataSource(context, soundUri)
-        isLooping = true
-        prepare()
-        setVolume(1f, 1f)
-        start()
+    stop(context)
+    val playSound = AlarmFeedbackPrefs.soundEnabled(context)
+    val playVibrate = AlarmFeedbackPrefs.vibrateEnabled(context)
+
+    if (playSound) {
+      try {
+        val soundUri = Uri.parse("android.resource://${context.packageName}/raw/alarm")
+        player = MediaPlayer().apply {
+          setAudioAttributes(
+            AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_ALARM)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+              .build(),
+          )
+          setDataSource(context, soundUri)
+          isLooping = true
+          prepare()
+          setVolume(1f, 1f)
+          start()
+        }
+      } catch (_: Exception) {
+        player = null
       }
-    } catch (_: Exception) {
-      player = null
     }
 
-    vibrate(context, repeat = true)
+    if (playVibrate) {
+      vibrate(context, repeat = true)
+    }
   }
 
   @Synchronized

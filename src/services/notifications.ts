@@ -1,13 +1,13 @@
+import type { Reminder } from '@/src/types/reminder';
+import { formatReminderWhen } from '@/src/utils/dates';
+import {
+    cancelAlarm,
+    isAndroidAlarmSupported,
+    scheduleAlarm,
+} from 'call-later-alarm';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import {
-  cancelAlarm,
-  isAndroidAlarmSupported,
-  scheduleAlarm,
-} from 'call-later-alarm';
-import type { Reminder } from '@/src/types/reminder';
-import { formatReminderWhen } from '@/src/utils/dates';
 
 export const NOTIFICATION_CATEGORY = 'call-reminder';
 export const ACTION_CALL_NOW = 'CALL_NOW';
@@ -16,50 +16,108 @@ export const ACTION_SNOOZE_10 = 'SNOOZE_10';
 export const ACTION_SNOOZE_30 = 'SNOOZE_30';
 export const ACTION_SNOOZE_60 = 'SNOOZE_60';
 
-// Bump channel id when sound/importance changes — Android won't update an
-// existing channel's sound after it has been created.
-const ANDROID_CHANNEL_ID = 'call-reminders-v3';
+// Keep in sync with AlarmFeedbackPrefs channel ids (native).
+// Bump when sound/vibrate behavior changes — Android won't update existing channels.
+const CHANNEL_SOUND_VIBRATE = 'call-later-alert-sv-v1';
+const CHANNEL_SOUND_ONLY = 'call-later-alert-s-v1';
+const CHANNEL_VIBRATE_ONLY = 'call-later-alert-v-v1';
+const CHANNEL_MUTE = 'call-later-alert-mute-v1';
 const ALARM_SOUND = 'alarm.wav';
+const VIBRATE_PATTERN = [0, 400, 200, 400, 200, 400];
 
 /** Synced from settings — when true, foreground banners are hidden (overlay covers the alert). */
 let alarmOverlayPreferred = true;
+let alarmSoundPreferred = true;
+let alarmVibratePreferred = true;
 
 export function setAlarmOverlayPreference(enabled: boolean): void {
   alarmOverlayPreferred = enabled;
+}
+
+export function setAlarmFeedbackNotificationPreferences(options: {
+  soundEnabled: boolean;
+  vibrateEnabled: boolean;
+}): void {
+  alarmSoundPreferred = options.soundEnabled;
+  alarmVibratePreferred = options.vibrateEnabled;
 }
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: !alarmOverlayPreferred,
     shouldShowList: true,
-    shouldPlaySound: true,
+    shouldPlaySound: alarmSoundPreferred,
     shouldSetBadge: false,
   }),
 });
 
 let configured = false;
 
+function androidChannelIdForPrefs(): string {
+  if (alarmSoundPreferred && alarmVibratePreferred) return CHANNEL_SOUND_VIBRATE;
+  if (alarmSoundPreferred && !alarmVibratePreferred) return CHANNEL_SOUND_ONLY;
+  if (!alarmSoundPreferred && alarmVibratePreferred) return CHANNEL_VIBRATE_ONLY;
+  return CHANNEL_MUTE;
+}
+
+async function ensureAndroidAlertChannels(): Promise<void> {
+  const audioAttributes = {
+    usage: Notifications.AndroidAudioUsage.ALARM,
+    contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+    flags: {
+      enforceAudibility: true,
+      requestHardwareAudioVideoSynchronization: false,
+    },
+  } as const;
+
+  await Notifications.setNotificationChannelAsync(CHANNEL_SOUND_VIBRATE, {
+    name: 'Call reminders',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: VIBRATE_PATTERN,
+    lightColor: '#0D9488',
+    sound: ALARM_SOUND,
+    enableVibrate: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    audioAttributes,
+  });
+
+  await Notifications.setNotificationChannelAsync(CHANNEL_SOUND_ONLY, {
+    name: 'Call reminders (sound)',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0],
+    lightColor: '#0D9488',
+    sound: ALARM_SOUND,
+    enableVibrate: false,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    audioAttributes,
+  });
+
+  await Notifications.setNotificationChannelAsync(CHANNEL_VIBRATE_ONLY, {
+    name: 'Call reminders (vibrate)',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: VIBRATE_PATTERN,
+    lightColor: '#0D9488',
+    sound: null,
+    enableVibrate: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+
+  await Notifications.setNotificationChannelAsync(CHANNEL_MUTE, {
+    name: 'Call reminders (silent)',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0],
+    lightColor: '#0D9488',
+    sound: null,
+    enableVibrate: false,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+}
+
 export async function configureNotifications(): Promise<void> {
   if (configured) return;
 
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-      name: 'Call reminders',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 400, 200, 400, 200, 400],
-      lightColor: '#0D9488',
-      sound: ALARM_SOUND,
-      enableVibrate: true,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      audioAttributes: {
-        usage: Notifications.AndroidAudioUsage.ALARM,
-        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
-        flags: {
-          enforceAudibility: true,
-          requestHardwareAudioVideoSynchronization: false,
-        },
-      },
-    });
+    await ensureAndroidAlertChannels();
   }
 
   await Notifications.setNotificationCategoryAsync(NOTIFICATION_CATEGORY, [
@@ -123,6 +181,8 @@ export function buildReminderNotificationContent(reminder: Reminder) {
     bodyParts.push(reminder.notes);
   }
 
+  const channelId = androidChannelIdForPrefs();
+
   return {
     title: 'Call Later',
     body: bodyParts.join(' · '),
@@ -133,12 +193,15 @@ export function buildReminderNotificationContent(reminder: Reminder) {
       notes: reminder.notes,
     },
     categoryIdentifier: NOTIFICATION_CATEGORY,
-    sound: ALARM_SOUND,
+    sound: alarmSoundPreferred ? ALARM_SOUND : null,
     ...(Platform.OS === 'android'
       ? {
-          channelId: ANDROID_CHANNEL_ID,
+          channelId,
           color: '#0D9488',
           priority: Notifications.AndroidNotificationPriority.MAX,
+          ...(alarmVibratePreferred
+            ? { vibrate: VIBRATE_PATTERN }
+            : { vibrate: [] }),
         }
       : {}),
   };
@@ -146,7 +209,8 @@ export function buildReminderNotificationContent(reminder: Reminder) {
 
 export async function scheduleReminderNotification(
   reminder: Reminder,
-  options?: { alarmOverlayEnabled?: boolean },
+  // Callers still pass this; native reads overlay pref at fire time.
+  _options?: { alarmOverlayEnabled?: boolean },
 ): Promise<string | null> {
   const triggerDate = new Date(reminder.scheduledAt);
   if (triggerDate.getTime() <= Date.now() + 1500) {
@@ -164,11 +228,10 @@ export async function scheduleReminderNotification(
     await cancelNotification(reminder.notificationId, reminder.id);
   }
 
-  const overlayEnabled = options?.alarmOverlayEnabled === true;
-
-  // Android full-screen overlay path: AlarmManager + USE_FULL_SCREEN_INTENT
-  // so the alarm UI can open over lock screen / other apps when it fires.
-  if (overlayEnabled && isAndroidAlarmSupported) {
+  // Android: AlarmManager always.
+  // Overlay ON  → full-screen overlay path (AlarmReceiver).
+  // Overlay OFF → ReminderAlarmService silent notification + looping tone/vibrate.
+  if (isAndroidAlarmSupported) {
     const content = buildReminderNotificationContent(reminder);
     try {
       return await scheduleAlarm({
@@ -182,16 +245,18 @@ export async function scheduleReminderNotification(
         notes: reminder.notes,
       });
     } catch (error) {
-      console.warn('Native full-screen alarm failed; falling back to notification', error);
+      console.warn('Native alarm failed; falling back to notification', error);
     }
   }
 
+  const content = buildReminderNotificationContent(reminder);
   const id = await Notifications.scheduleNotificationAsync({
-    content: buildReminderNotificationContent(reminder),
+    content,
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: triggerDate,
-      channelId: Platform.OS === 'android' ? ANDROID_CHANNEL_ID : undefined,
+      channelId:
+        Platform.OS === 'android' ? androidChannelIdForPrefs() : undefined,
     },
   });
 

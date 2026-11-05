@@ -31,7 +31,7 @@ import {
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Linking,
   Platform,
@@ -67,6 +67,8 @@ export default function SettingsScreen() {
     setDefaultSnooze,
     setNotificationsEnabled,
     setAlarmOverlayEnabled,
+    setAlarmSoundEnabled,
+    setAlarmVibrateEnabled,
   } = useAppTheme();
   const { alert } = useDialog();
   const { refresh } = useReminders();
@@ -78,27 +80,31 @@ export default function SettingsScreen() {
     '1.0.0';
 
   const onToggleNotifications = async (enabled: boolean) => {
+    // Commit UI state first so the Switch doesn't animate back.
+    void setNotificationsEnabled(enabled);
+
+    if (enabled) {
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        void setNotificationsEnabled(false);
+        alert(
+          'Permission needed',
+          'Enable notifications in system settings so Call Later can remind you.',
+          [
+            { label: 'Not now', variant: 'secondary' },
+            {
+              label: 'Open settings',
+              variant: 'primary',
+              onPress: () => void Linking.openSettings(),
+            },
+          ],
+        );
+        return;
+      }
+    }
+
     setBusy(true);
     try {
-      if (enabled) {
-        const granted = await requestNotificationPermissions();
-        if (!granted) {
-          alert(
-            'Permission needed',
-            'Enable notifications in system settings so Call Later can remind you.',
-            [
-              { label: 'Not now', variant: 'secondary' },
-              {
-                label: 'Open settings',
-                variant: 'primary',
-                onPress: () => void Linking.openSettings(),
-              },
-            ],
-          );
-          return;
-        }
-      }
-      await setNotificationsEnabled(enabled);
       await rehydratePendingNotifications(enabled, settings.alarmOverlayEnabled);
       await refresh();
     } catch (err) {
@@ -112,6 +118,9 @@ export default function SettingsScreen() {
   };
 
   const onToggleAlarmOverlay = async (enabled: boolean) => {
+    // Commit UI state first so the Switch doesn't animate back.
+    void setAlarmOverlayEnabled(enabled);
+
     setBusy(true);
     try {
       if (enabled && isAndroidAlarmSupported) {
@@ -146,7 +155,6 @@ export default function SettingsScreen() {
           );
         }
       }
-      await setAlarmOverlayEnabled(enabled);
       if (settings.notificationsEnabled) {
         await rehydratePendingNotifications(true, enabled);
         await refresh();
@@ -319,6 +327,44 @@ export default function SettingsScreen() {
           />
           <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
           <SwitchRow
+            icon="volume-high-outline"
+            title="Alarm sound"
+            subtitle="Play tone when a call alert starts"
+            value={settings.alarmSoundEnabled}
+            disabled={!settings.notificationsEnabled || busy}
+            onValueChange={(value) => {
+              void (async () => {
+                await setAlarmSoundEnabled(value);
+                if (settings.notificationsEnabled) {
+                  await rehydratePendingNotifications(
+                    true,
+                    settings.alarmOverlayEnabled,
+                  );
+                }
+              })();
+            }}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
+          <SwitchRow
+            icon="pulse-outline"
+            title="Alarm vibrate"
+            subtitle="Vibrate while the call alert is active"
+            value={settings.alarmVibrateEnabled}
+            disabled={!settings.notificationsEnabled || busy}
+            onValueChange={(value) => {
+              void (async () => {
+                await setAlarmVibrateEnabled(value);
+                if (settings.notificationsEnabled) {
+                  await rehydratePendingNotifications(
+                    true,
+                    settings.alarmOverlayEnabled,
+                  );
+                }
+              })();
+            }}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
+          <SwitchRow
             icon="phone-portrait-outline"
             title="Full-screen alarm"
             subtitle="Overlay alert without opening the app"
@@ -454,6 +500,13 @@ function SwitchRow({
   onValueChange: (value: boolean) => void;
 }) {
   const { colors } = useAppTheme();
+  // Optimistic thumb position — parent settings now update synchronously,
+  // so this only covers the same-frame gap and avoids Android flicker.
+  const [localValue, setLocalValue] = useState(value);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
 
   return (
     <View style={styles.switchRow}>
@@ -465,8 +518,11 @@ function SwitchRow({
         </AppText>
       </View>
       <Switch
-        value={value}
-        onValueChange={onValueChange}
+        value={localValue}
+        onValueChange={(next) => {
+          setLocalValue(next);
+          onValueChange(next);
+        }}
         disabled={disabled}
         trackColor={{ false: colors.border, true: colors.primary }}
         thumbColor={colors.surface}

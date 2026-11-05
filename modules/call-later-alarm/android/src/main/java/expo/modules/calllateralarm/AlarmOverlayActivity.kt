@@ -10,6 +10,7 @@ import android.view.WindowManager
  */
 class AlarmOverlayActivity : Activity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    activeInstance = this
     super.onCreate(savedInstanceState)
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -39,7 +40,7 @@ class AlarmOverlayActivity : Activity() {
     )
   }
 
-  private fun finishAndRemoveTaskCompat() {
+  fun finishAndRemoveTaskCompat() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       finishAndRemoveTask()
     } else {
@@ -48,7 +49,22 @@ class AlarmOverlayActivity : Activity() {
   }
 
   override fun onDestroy() {
+    if (activeInstance === this) {
+      activeInstance = null
+    }
     AlarmTonePlayer.stop(this)
     super.onDestroy()
+  }
+
+  companion object {
+    @Volatile
+    private var activeInstance: AlarmOverlayActivity? = null
+
+    fun finishIfOpen() {
+      val activity = activeInstance ?: return
+      activity.runOnUiThread {
+        activity.finishAndRemoveTaskCompat()
+      }
+    }
   }
 }

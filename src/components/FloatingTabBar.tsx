@@ -1,5 +1,4 @@
 import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
 import {
   BottomTabBarHeightCallbackContext,
   type BottomTabBarProps,
@@ -89,7 +88,6 @@ export function FloatingTabBar({
                 canPreventDefault: true,
               });
               if (!focused && !event.defaultPrevented) {
-                void Haptics.selectionAsync();
                 navigateToTab(route.key);
               }
             };

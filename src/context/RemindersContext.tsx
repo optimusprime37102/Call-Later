@@ -4,8 +4,10 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { getDatabase } from '@/src/db/database';
 import {
   createScheduledReminder,
@@ -73,6 +75,51 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const applyingNativeActionsRef = useRef(false);
+
+  /** Sync Stop/Snooze/Completed from native notification/overlay into SQLite + UI. */
+  const applyPendingNativeActions = useCallback(async (): Promise<boolean> => {
+    if (applyingNativeActionsRef.current) return false;
+    applyingNativeActionsRef.current = true;
+    let changed = false;
+    try {
+      const pendingActions = await consumePendingActions();
+      for (const id of pendingActions.completedIds) {
+        try {
+          await markReminderCompleted(id);
+          changed = true;
+        } catch {
+          // Reminder may already be completed/removed.
+        }
+      }
+      for (const [id, triggerAt] of Object.entries(pendingActions.snoozed)) {
+        try {
+          await updateScheduledReminder(
+            id,
+            {
+              scheduledAt: Number(triggerAt),
+              status: 'pending',
+              completedAt: null,
+              notificationId: `native:${id}`,
+            },
+            { rescheduleNotification: false },
+          );
+          changed = true;
+        } catch {
+          // Reminder may no longer exist.
+        }
+      }
+      if (changed) {
+        await refresh();
+      }
+    } catch {
+      // Native module may be unavailable before rebuild.
+    } finally {
+      applyingNativeActionsRef.current = false;
+    }
+    return changed;
+  }, [refresh]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -82,35 +129,7 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
         await getDatabase();
         await configureNotifications();
 
-        // Apply actions taken on the native overlay while the JS app was closed.
-        try {
-          const pendingActions = await consumePendingActions();
-          for (const id of pendingActions.completedIds) {
-            try {
-              await markReminderCompleted(id);
-            } catch {
-              // Reminder may already be completed/removed.
-            }
-          }
-          for (const [id, triggerAt] of Object.entries(pendingActions.snoozed)) {
-            try {
-              await updateScheduledReminder(
-                id,
-                {
-                  scheduledAt: Number(triggerAt),
-                  status: 'pending',
-                  completedAt: null,
-                  notificationId: `native:${id}`,
-                },
-                { rescheduleNotification: false },
-              );
-            } catch {
-              // Reminder may no longer exist.
-            }
-          }
-        } catch {
-          // Native module may be unavailable before rebuild.
-        }
+        await applyPendingNativeActions();
 
         await rehydratePendingNotifications(
           settings.notificationsEnabled,
@@ -136,9 +155,31 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
   }, [
     themeReady,
     refresh,
+    applyPendingNativeActions,
     settings.notificationsEnabled,
     settings.alarmOverlayEnabled,
   ]);
+
+  // Native Snooze/Stop while app is open (or returns to foreground) must update Today tab.
+  useEffect(() => {
+    if (!isReady) return;
+
+    const sync = () => {
+      void applyPendingNativeActions();
+    };
+
+    sync();
+    const onAppState = (state: AppStateStatus) => {
+      if (state === 'active') sync();
+    };
+    const appStateSub = AppState.addEventListener('change', onAppState);
+    const interval = setInterval(sync, 2000);
+
+    return () => {
+      appStateSub.remove();
+      clearInterval(interval);
+    };
+  }, [isReady, applyPendingNativeActions]);
 
   const createReminder = useCallback(
     async (input: CreateReminderInput) => {

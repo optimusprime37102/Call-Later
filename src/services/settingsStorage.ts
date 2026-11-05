@@ -16,6 +16,10 @@ function isSnooze(value: unknown): value is SnoozeDurationMinutes {
   return value === 10 || value === 30 || value === 60;
 }
 
+function isBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 export async function loadSettings(): Promise<AppSettings> {
   try {
     const raw = await AsyncStorage.getItem(SETTINGS_KEY);
@@ -27,14 +31,22 @@ export async function loadSettings(): Promise<AppSettings> {
       defaultSnoozeMinutes: isSnooze(parsed.defaultSnoozeMinutes)
         ? parsed.defaultSnoozeMinutes
         : DEFAULT_SETTINGS.defaultSnoozeMinutes,
-      notificationsEnabled:
-        typeof parsed.notificationsEnabled === 'boolean'
-          ? parsed.notificationsEnabled
-          : DEFAULT_SETTINGS.notificationsEnabled,
-      alarmOverlayEnabled:
-        typeof parsed.alarmOverlayEnabled === 'boolean'
-          ? parsed.alarmOverlayEnabled
-          : DEFAULT_SETTINGS.alarmOverlayEnabled,
+      notificationsEnabled: isBoolean(
+        parsed.notificationsEnabled,
+        DEFAULT_SETTINGS.notificationsEnabled,
+      ),
+      alarmOverlayEnabled: isBoolean(
+        parsed.alarmOverlayEnabled,
+        DEFAULT_SETTINGS.alarmOverlayEnabled,
+      ),
+      alarmSoundEnabled: isBoolean(
+        parsed.alarmSoundEnabled,
+        DEFAULT_SETTINGS.alarmSoundEnabled,
+      ),
+      alarmVibrateEnabled: isBoolean(
+        parsed.alarmVibrateEnabled,
+        DEFAULT_SETTINGS.alarmVibrateEnabled,
+      ),
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

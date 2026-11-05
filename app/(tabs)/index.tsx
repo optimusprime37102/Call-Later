@@ -59,24 +59,24 @@ export default function HomeScreen() {
     );
   }, [grouped]);
 
-  const lists = useMemo(() => {
-    const excludeId = nextUp?.id;
-    const withoutNext = (items: Reminder[]) =>
-      excludeId ? items.filter((r) => r.id !== excludeId) : items;
-    return {
+  // Keep Next Up as a highlight only — still show the same reminder in its tab
+  // so Today/Later never look empty when the only item was promoted above.
+  const lists = useMemo(
+    () => ({
       overdue: grouped.overdue,
-      today: withoutNext(grouped.today),
-      upcoming: withoutNext(grouped.upcoming),
-    };
-  }, [grouped, nextUp?.id]);
+      today: grouped.today,
+      upcoming: grouped.upcoming,
+    }),
+    [grouped],
+  );
 
   const chipCounts = useMemo(
     () => ({
-      overdue: grouped.overdue.length,
-      today: grouped.today.length,
-      upcoming: grouped.upcoming.length,
+      overdue: lists.overdue.length,
+      today: lists.today.length,
+      upcoming: lists.upcoming.length,
     }),
-    [grouped],
+    [lists],
   );
 
   const activeFilter = filter ?? preferredFilter(chipCounts);
@@ -108,10 +108,8 @@ export default function HomeScreen() {
       description: 'You’re caught up. Upcoming reminders stay under Today and Later.',
     },
     today: {
-      title: 'Nothing else today',
-      description: nextUp
-        ? 'Your next call is highlighted above.'
-        : 'Schedule a callback for later today.',
+      title: 'Nothing today',
+      description: 'Schedule a callback for later today.',
     },
     upcoming: {
       title: 'Nothing later',
@@ -210,6 +208,7 @@ export default function HomeScreen() {
               onFilterChange={setFilter}
               counts={chipCounts}
               lists={lists}
+              nextUpId={nextUp?.id}
               emptyCopy={filterEmptyCopy}
               refreshing={refreshing || isLoading}
               onRefresh={() => void onRefresh()}
@@ -304,10 +303,14 @@ function NextUpCard({
         <AppText variant="title" style={styles.nextName} numberOfLines={1}>
           {reminder.contactName}
         </AppText>
-        <AppText variant="callout" style={styles.nextMeta} numberOfLines={1}>
-          {formatReminderWhen(reminder.scheduledAt)} ·{' '}
-          {formatRelativeStatus(reminder.scheduledAt)}
-        </AppText>
+        <View style={styles.nextMetaRow}>
+          <AppText variant="callout" style={styles.nextMeta} numberOfLines={1}>
+            {formatReminderWhen(reminder.scheduledAt)}
+          </AppText>
+          <AppText variant="callout" style={styles.nextRelative} numberOfLines={1}>
+            {formatRelativeStatus(reminder.scheduledAt)}
+          </AppText>
+        </View>
       </LinearGradient>
     </Pressable>
   );
@@ -420,8 +423,20 @@ const styles = StyleSheet.create({
   nextName: {
     color: palette.mist50,
   },
+  nextMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
   nextMeta: {
+    flexShrink: 1,
     color: 'rgba(232, 238, 242, 0.82)',
+  },
+  nextRelative: {
+    flexShrink: 0,
+    color: 'rgba(244, 247, 249, 0.92)',
+    fontWeight: '600',
   },
   fab: {
     position: 'absolute',

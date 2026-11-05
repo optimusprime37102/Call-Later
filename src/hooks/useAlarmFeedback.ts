@@ -4,14 +4,20 @@ import {
   startAlarmFeedback,
   stopAlarmFeedback,
 } from 'call-later-alarm';
+import { useAppTheme } from '@/src/context/ThemeContext';
 
 const VIBRATE_PATTERN = [0, 600, 250, 600, 250, 800];
 
 /**
- * Plays looping alarm sound + vibration while `active` is true.
+ * Plays looping alarm sound + vibration while `active` is true,
+ * respecting Settings → alarm sound / vibrate toggles.
  * Android uses the native MediaPlayer (USAGE_ALARM); iOS uses Vibration only.
  */
 export function useAlarmFeedback(active: boolean) {
+  const { settings } = useAppTheme();
+  const soundEnabled = settings.alarmSoundEnabled;
+  const vibrateEnabled = settings.alarmVibrateEnabled;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -20,18 +26,24 @@ export function useAlarmFeedback(active: boolean) {
 
       if (Platform.OS === 'android') {
         try {
-          await startAlarmFeedback();
+          // Native player reads sound/vibrate prefs synced from settings.
+          if (soundEnabled || vibrateEnabled) {
+            await startAlarmFeedback();
+          }
         } catch (error) {
           console.warn('Failed to start native alarm feedback', error);
-          try {
-            Vibration.vibrate(VIBRATE_PATTERN, true);
-          } catch {
-            // Ignore.
+          if (vibrateEnabled) {
+            try {
+              Vibration.vibrate(VIBRATE_PATTERN, true);
+            } catch {
+              // Ignore.
+            }
           }
         }
         return;
       }
 
+      if (!vibrateEnabled) return;
       try {
         Vibration.vibrate(VIBRATE_PATTERN, true);
       } catch (error) {
@@ -64,5 +76,5 @@ export function useAlarmFeedback(active: boolean) {
       }
       void cancelled;
     };
-  }, [active]);
+  }, [active, soundEnabled, vibrateEnabled]);
 }
