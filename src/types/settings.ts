@@ -1,6 +1,13 @@
+import {
+  AlarmSoundId,
+  DEFAULT_ALARM_SOUND_ID,
+} from '@/src/constants/alarmSounds';
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 export type SnoozeDurationMinutes = 10 | 30 | 60;
+
+export type { AlarmSoundId };
 
 export interface AppSettings {
   theme: ThemePreference;
@@ -12,6 +19,8 @@ export interface AppSettings {
   alarmSoundEnabled: boolean;
   /** Vibrate while the alert overlay is active */
   alarmVibrateEnabled: boolean;
+  /** Selected alarm tone id from assets/sounds */
+  alarmSoundId: AlarmSoundId;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -21,4 +30,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alarmOverlayEnabled: true,
   alarmSoundEnabled: true,
   alarmVibrateEnabled: true,
+  alarmSoundId: DEFAULT_ALARM_SOUND_ID,
 };

@@ -6,6 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 
+/**
+ * Schedules call reminders with [AlarmManager.setAlarmClock] only.
+ *
+ * setAlarmClock is Doze-exempt and not subject to the
+ * setExactAndAllowWhileIdle quota — required for on-time alerts under
+ * battery optimization.
+ */
 object AlarmScheduler {
   fun schedule(
     context: Context,
@@ -18,9 +25,32 @@ object AlarmScheduler {
     phoneNumber: String,
     notes: String,
   ) {
-    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-    val pending = pendingIntent(
-      context,
+    val appContext = context.applicationContext
+    val fireAt = triggerAt.coerceAtLeast(System.currentTimeMillis())
+
+    AlarmScheduleStore.put(
+      appContext,
+      AlarmScheduleStore.Entry(
+        alarmId = alarmId,
+        triggerAt = fireAt,
+        title = title,
+        body = body,
+        reminderId = reminderId,
+        contactName = contactName,
+        phoneNumber = phoneNumber,
+        notes = notes,
+      ),
+    )
+
+    val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+    // Match Settings “Alarms & reminders” — ignore battery-exemption false positives.
+    if (!CallLaterAlarmModule.isAlarmsAndRemindersEnabled(appContext)) {
+      throw SecurityException("Exact alarm permission is required for reliable reminders")
+    }
+
+    val operation = firePendingIntent(
+      appContext,
       alarmId,
       reminderId,
       title,
@@ -30,22 +60,56 @@ object AlarmScheduler {
       notes,
     )
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
-    } else {
-      @Suppress("DEPRECATION")
-      alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
-    }
+    val showIntent = AlarmReceiver.buildOpenInAppIntent(appContext, alarmId, reminderId)
+    val showPending = PendingIntent.getActivity(
+      appContext,
+      alarmId.hashCode() + 77,
+      showIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    // Doze-exempt. Do not fall back to inexact / quota-limited APIs.
+    alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(fireAt, showPending), operation)
   }
 
   fun cancel(context: Context, alarmId: String) {
-    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-    val pending = pendingIntent(context, alarmId, alarmId, "", "", "", "", "")
+    val appContext = context.applicationContext
+    AlarmScheduleStore.remove(appContext, alarmId)
+    val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    val pending = firePendingIntent(appContext, alarmId, alarmId, "", "", "", "", "")
     alarmManager.cancel(pending)
     pending.cancel()
   }
 
-  private fun pendingIntent(
+  /** Re-arm every future persisted alarm (boot / app update / time change). */
+  fun rescheduleAll(context: Context) {
+    val appContext = context.applicationContext
+    val now = System.currentTimeMillis()
+    for (entry in AlarmScheduleStore.all(appContext)) {
+      if (entry.triggerAt <= now) {
+        // Past due — drop; JS list still shows overdue, do not auto-spam on boot.
+        AlarmScheduleStore.remove(appContext, entry.alarmId)
+        continue
+      }
+      try {
+        schedule(
+          context = appContext,
+          alarmId = entry.alarmId,
+          triggerAt = entry.triggerAt,
+          title = entry.title,
+          body = entry.body,
+          reminderId = entry.reminderId,
+          contactName = entry.contactName,
+          phoneNumber = entry.phoneNumber,
+          notes = entry.notes,
+        )
+      } catch (_: Exception) {
+        // Exact-alarm permission may be off after reboot; JS rehydrate prompts.
+      }
+    }
+  }
+
+  private fun firePendingIntent(
     context: Context,
     alarmId: String,
     reminderId: String,

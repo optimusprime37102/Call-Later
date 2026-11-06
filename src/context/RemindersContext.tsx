@@ -160,26 +160,38 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
     settings.alarmOverlayEnabled,
   ]);
 
-  // Native Snooze/Stop while app is open (or returns to foreground) must update Today tab.
+  // Native Snooze/Stop while open, plus a full list refresh on resume so
+  // edited times / overdue grouping are never stuck on stale in-memory rows.
   useEffect(() => {
     if (!isReady) return;
 
-    const sync = () => {
+    const syncNativeActions = () => {
       void applyPendingNativeActions();
     };
 
-    sync();
+    const onForeground = () => {
+      void (async () => {
+        const changed = await applyPendingNativeActions();
+        // applyPendingNativeActions already refresh()es when it writes.
+        // Always refresh otherwise so overdue/today buckets and detail stay current.
+        if (!changed) {
+          await refresh();
+        }
+      })();
+    };
+
+    syncNativeActions();
     const onAppState = (state: AppStateStatus) => {
-      if (state === 'active') sync();
+      if (state === 'active') onForeground();
     };
     const appStateSub = AppState.addEventListener('change', onAppState);
-    const interval = setInterval(sync, 2000);
+    const interval = setInterval(syncNativeActions, 2000);
 
     return () => {
       appStateSub.remove();
       clearInterval(interval);
     };
-  }, [isReady, applyPendingNativeActions]);
+  }, [isReady, applyPendingNativeActions, refresh]);
 
   const createReminder = useCallback(
     async (input: CreateReminderInput) => {

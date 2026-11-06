@@ -49,6 +49,37 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     if (alarmId.isNullOrBlank()) return
+
+    // Hold CPU until FGS / overlay is up — BroadcastReceiver otherwise ends under Doze.
+    val pendingResult = goAsync()
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    val wakeLock = powerManager.newWakeLock(
+      PowerManager.PARTIAL_WAKE_LOCK,
+      "calllater:alarm-fire",
+    )
+    wakeLock.setReferenceCounted(false)
+    try {
+      wakeLock.acquire(30_000L)
+    } catch (_: Exception) {
+    }
+
+    try {
+      deliverAlarm(context, intent, alarmId, reminderId)
+    } finally {
+      try {
+        if (wakeLock.isHeld) wakeLock.release()
+      } catch (_: Exception) {
+      }
+      pendingResult.finish()
+    }
+  }
+
+  private fun deliverAlarm(
+    context: Context,
+    intent: Intent,
+    alarmId: String,
+    reminderId: String?,
+  ) {
     val resolvedReminderId = reminderId?.takeIf { it.isNotBlank() } ?: alarmId
     val title = intent.getStringExtra(EXTRA_TITLE) ?: "Call Later"
     val body = intent.getStringExtra(EXTRA_BODY) ?: "Time to call"
@@ -57,7 +88,8 @@ class AlarmReceiver : BroadcastReceiver() {
     val notes = intent.getStringExtra(EXTRA_NOTES) ?: ""
     val overlayEnabled = AlarmFeedbackPrefs.overlayEnabled(context)
 
-    wakeScreen(context)
+    // One-shot fire — drop so reboot does not re-arm this trigger.
+    AlarmScheduleStore.remove(context, alarmId)
 
     // Full-screen OFF: silent FGS notification + service-owned looping sound/vibrate.
     if (!overlayEnabled) {
@@ -73,13 +105,13 @@ class AlarmReceiver : BroadcastReceiver() {
           notes = notes,
         )
       } catch (_: Exception) {
-        // Last resort if FGS cannot start.
         AlarmTonePlayer.start(context)
       }
       return
     }
 
     ensureChannels(context)
+    ensureOverlaySilentChannel(context)
 
     val overlayIntent = buildOverlayActivityIntent(
       context,
@@ -89,7 +121,6 @@ class AlarmReceiver : BroadcastReceiver() {
       phoneNumber,
       notes,
     )
-    // Notification tap → app reminder detail (dismisses overlay). Auto FSI → native overlay.
     val openInAppIntent = buildOpenInAppIntent(
       context,
       alarmId,
@@ -146,10 +177,6 @@ class AlarmReceiver : BroadcastReceiver() {
       body,
     )
 
-    val playSound = AlarmFeedbackPrefs.soundEnabled(context)
-    val playVibrate = AlarmFeedbackPrefs.vibrateEnabled(context)
-    val channelId = channelIdFor(playSound, playVibrate)
-    val soundUri = Uri.parse("android.resource://${context.packageName}/raw/alarm")
     val iconRes = context.resources.getIdentifier(
       "notification_icon",
       "drawable",
@@ -158,7 +185,8 @@ class AlarmReceiver : BroadcastReceiver() {
     val smallIcon =
       if (iconRes != 0) iconRes else android.R.drawable.ic_lock_idle_alarm
 
-    val builder = NotificationCompat.Builder(context, channelId)
+    // Overlay owns sound via AlarmTonePlayer — keep shade notification silent.
+    val builder = NotificationCompat.Builder(context, CHANNEL_OVERLAY_SILENT)
       .setSmallIcon(smallIcon)
       .setContentTitle(title)
       .setContentText(body)
@@ -168,38 +196,24 @@ class AlarmReceiver : BroadcastReceiver() {
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setAutoCancel(true)
       .setOngoing(true)
+      .setOnlyAlertOnce(true)
+      .setSilent(true)
+      .setSound(null)
+      .setVibrate(longArrayOf(0))
       .setDefaults(NotificationCompat.DEFAULT_LIGHTS)
       .setContentIntent(contentPendingIntent)
       .setDeleteIntent(stopPending)
       .setFullScreenIntent(fullScreenPendingIntent, true)
       .setColor(0xFF0D9488.toInt())
-      .setOnlyAlertOnce(false)
       .addAction(0, "Call Now", callPending)
       .addAction(0, "Snooze 10m", snoozePending)
       .addAction(0, "Stop", stopPending)
-
-    if (playSound) {
-      builder.setSound(soundUri)
-    } else {
-      builder.setSound(null)
-    }
-
-    if (playVibrate) {
-      builder.setVibrate(VIBRATE_PATTERN)
-    } else {
-      builder.setVibrate(longArrayOf(0))
-    }
-
-    if (!playSound && !playVibrate) {
-      builder.setSilent(true)
-    }
 
     try {
       NotificationManagerCompat.from(context).notify(requestCode, builder.build())
     } catch (_: SecurityException) {
     }
 
-    // Prefer system overlay service — never opens the React Native app.
     if (Settings.canDrawOverlays(context)) {
       try {
         AlarmOverlayService.start(context, overlayIntent)
@@ -209,27 +223,10 @@ class AlarmReceiver : BroadcastReceiver() {
       }
     }
 
-    // Lock-screen / no overlay permission: native AlarmOverlayActivity only.
     try {
       context.startActivity(overlayIntent)
     } catch (_: Exception) {
-      // Full-screen intent on the notification still covers locked devices.
-    }
-  }
-
-  private fun wakeScreen(context: Context) {
-    try {
-      val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-      @Suppress("DEPRECATION")
-      val wakeLock = powerManager.newWakeLock(
-        PowerManager.FULL_WAKE_LOCK or
-          PowerManager.ACQUIRE_CAUSES_WAKEUP or
-          PowerManager.ON_AFTER_RELEASE,
-        "calllater:alarm",
-      )
-      wakeLock.acquire(5000L)
-      wakeLock.release()
-    } catch (_: Exception) {
+      AlarmTonePlayer.start(context)
     }
   }
 
@@ -272,7 +269,8 @@ class AlarmReceiver : BroadcastReceiver() {
   private fun ensureChannels(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val soundUri = Uri.parse("android.resource://${context.packageName}/raw/alarm")
+    val soundUri = AlarmFeedbackPrefs.soundUri(context)
+    val soundKey = AlarmFeedbackPrefs.soundResource(context)
     val attrs = AudioAttributes.Builder()
       .setUsage(AudioAttributes.USAGE_ALARM)
       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -303,10 +301,45 @@ class AlarmReceiver : BroadcastReceiver() {
       manager.createNotificationChannel(channel)
     }
 
-    create(CHANNEL_SOUND_VIBRATE, "Call reminders", withSound = true, withVibrate = true)
-    create(CHANNEL_SOUND_ONLY, "Call reminders (sound)", withSound = true, withVibrate = false)
+    create(
+      "$CHANNEL_SOUND_VIBRATE-$soundKey",
+      "Call reminders",
+      withSound = true,
+      withVibrate = true,
+    )
+    create(
+      "$CHANNEL_SOUND_ONLY-$soundKey",
+      "Call reminders (sound)",
+      withSound = true,
+      withVibrate = false,
+    )
     create(CHANNEL_VIBRATE_ONLY, "Call reminders (vibrate)", withSound = false, withVibrate = true)
     create(CHANNEL_MUTE, "Call reminders (silent)", withSound = false, withVibrate = false)
+  }
+
+  /**
+   * High-importance but silent channel for overlay alarms.
+   * Sound/vibrate are owned exclusively by [AlarmTonePlayer] on the overlay.
+   * New id so devices don't keep an older channel that had a sound attached.
+   */
+  private fun ensureOverlaySilentChannel(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (manager.getNotificationChannel(CHANNEL_OVERLAY_SILENT) != null) return
+    manager.createNotificationChannel(
+      NotificationChannel(
+        CHANNEL_OVERLAY_SILENT,
+        "Call reminders (full-screen)",
+        NotificationManager.IMPORTANCE_HIGH,
+      ).apply {
+        description = "Shows the full-screen alarm; sound plays from the overlay"
+        setSound(null, null)
+        enableVibration(false)
+        vibrationPattern = longArrayOf(0)
+        setShowBadge(false)
+        lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+      },
+    )
   }
 
   companion object {
@@ -314,6 +347,8 @@ class AlarmReceiver : BroadcastReceiver() {
     const val CHANNEL_SOUND_ONLY = "call-reminders-sound-only"
     const val CHANNEL_VIBRATE_ONLY = "call-reminders-vibrate-only"
     const val CHANNEL_MUTE = "call-reminders-mute"
+    /** Silent high-importance channel — overlay AlarmTonePlayer owns audio. */
+    const val CHANNEL_OVERLAY_SILENT = "call-reminders-overlay-silent-v1"
 
     const val ACTION_FIRE = "expo.modules.calllateralarm.FIRE_ALARM"
     const val ACTION_STOP = "expo.modules.calllateralarm.REMINDER_ALARM_STOP"
@@ -329,10 +364,11 @@ class AlarmReceiver : BroadcastReceiver() {
 
     val VIBRATE_PATTERN = longArrayOf(0, 700, 250, 700, 250, 900, 250, 700)
 
-    fun channelIdFor(sound: Boolean, vibrate: Boolean): String {
+    fun channelIdFor(context: Context, sound: Boolean, vibrate: Boolean): String {
+      val soundKey = AlarmFeedbackPrefs.soundResource(context)
       return when {
-        sound && vibrate -> CHANNEL_SOUND_VIBRATE
-        sound -> CHANNEL_SOUND_ONLY
+        sound && vibrate -> "$CHANNEL_SOUND_VIBRATE-$soundKey"
+        sound -> "$CHANNEL_SOUND_ONLY-$soundKey"
         vibrate -> CHANNEL_VIBRATE_ONLY
         else -> CHANNEL_MUTE
       }

@@ -21,11 +21,11 @@ object AlarmOverlayController {
       if (!alarmId.isNullOrBlank()) {
         manager.cancel(alarmId.hashCode())
       }
-      manager.cancel(OVERLAY_SERVICE_NOTIFICATION_ID)
+      // Legacy separate FGS notification id (pre single-notification overlay).
+      manager.cancel(LEGACY_OVERLAY_SERVICE_NOTIFICATION_ID)
     } catch (_: Exception) {
     }
   }
 
-  // Keep in sync with AlarmOverlayService.SERVICE_NOTIFICATION_ID
-  private const val OVERLAY_SERVICE_NOTIFICATION_ID = 71001
+  private const val LEGACY_OVERLAY_SERVICE_NOTIFICATION_ID = 71001
 }

@@ -22,6 +22,8 @@ export type AlarmFeedbackOptions = {
   vibrateEnabled: boolean;
   /** Full-screen overlay on/off — read at fire time by native AlarmReceiver. */
   overlayEnabled?: boolean;
+  /** Android raw resource name for the selected alarm tone (e.g. "alarm2"). */
+  soundResource?: string;
 };
 
 export type PendingReminderOpen = {
@@ -39,6 +41,12 @@ type CallLaterAlarmNative = {
   openFullScreenIntentSettings: () => Promise<void>;
   canDrawOverlays: () => Promise<boolean>;
   openOverlaySettings: () => Promise<void>;
+  canScheduleExactAlarms: () => Promise<boolean>;
+  openExactAlarmSettings: () => Promise<void>;
+  isIgnoringBatteryOptimizations: () => Promise<boolean>;
+  requestIgnoreBatteryOptimizations: () => Promise<void>;
+  openBatteryOptimizationSettings: () => Promise<void>;
+  reschedulePersistedAlarms: () => Promise<void>;
   consumePendingActions: () => Promise<PendingAlarmActions>;
   dismissAlarmOverlay: (alarmId?: string | null) => Promise<void>;
   consumePendingReminderOpen: () => Promise<PendingReminderOpen | null>;
@@ -100,6 +108,36 @@ export async function canDrawOverlays(): Promise<boolean> {
 export async function openOverlaySettings(): Promise<void> {
   if (!native) return;
   await native.openOverlaySettings();
+}
+
+export async function canScheduleExactAlarms(): Promise<boolean> {
+  if (!native) return Platform.OS !== 'android';
+  return native.canScheduleExactAlarms();
+}
+
+export async function openExactAlarmSettings(): Promise<void> {
+  if (!native) return;
+  await native.openExactAlarmSettings();
+}
+
+export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
+  if (!native) return true;
+  return native.isIgnoringBatteryOptimizations();
+}
+
+export async function requestIgnoreBatteryOptimizations(): Promise<void> {
+  if (!native) return;
+  await native.requestIgnoreBatteryOptimizations();
+}
+
+export async function openBatteryOptimizationSettings(): Promise<void> {
+  if (!native) return;
+  await native.openBatteryOptimizationSettings();
+}
+
+export async function reschedulePersistedAlarms(): Promise<void> {
+  if (!native) return;
+  await native.reschedulePersistedAlarms();
 }
 
 export async function consumePendingActions(): Promise<PendingAlarmActions> {

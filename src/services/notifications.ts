@@ -18,17 +18,22 @@ export const ACTION_SNOOZE_60 = 'SNOOZE_60';
 
 // Keep in sync with AlarmFeedbackPrefs channel ids (native).
 // Bump when sound/vibrate behavior changes — Android won't update existing channels.
-const CHANNEL_SOUND_VIBRATE = 'call-later-alert-sv-v1';
-const CHANNEL_SOUND_ONLY = 'call-later-alert-s-v1';
-const CHANNEL_VIBRATE_ONLY = 'call-later-alert-v-v1';
-const CHANNEL_MUTE = 'call-later-alert-mute-v1';
-const ALARM_SOUND = 'alarm.wav';
+const CHANNEL_SOUND_VIBRATE_PREFIX = 'call-later-alert-sv-v2';
+const CHANNEL_SOUND_ONLY_PREFIX = 'call-later-alert-s-v2';
+const CHANNEL_VIBRATE_ONLY = 'call-later-alert-v-v2';
+const CHANNEL_MUTE = 'call-later-alert-mute-v2';
+const DEFAULT_ALARM_SOUND_FILE = 'alarm.wav';
 const VIBRATE_PATTERN = [0, 400, 200, 400, 200, 400];
 
 /** Synced from settings — when true, foreground banners are hidden (overlay covers the alert). */
 let alarmOverlayPreferred = true;
 let alarmSoundPreferred = true;
 let alarmVibratePreferred = true;
+let alarmSoundFileName = DEFAULT_ALARM_SOUND_FILE;
+
+function soundChannelSuffix(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, '').toLowerCase();
+}
 
 export function setAlarmOverlayPreference(enabled: boolean): void {
   alarmOverlayPreferred = enabled;
@@ -37,9 +42,25 @@ export function setAlarmOverlayPreference(enabled: boolean): void {
 export function setAlarmFeedbackNotificationPreferences(options: {
   soundEnabled: boolean;
   vibrateEnabled: boolean;
+  soundFileName?: string;
 }): void {
+  const previousSound = alarmSoundFileName;
   alarmSoundPreferred = options.soundEnabled;
   alarmVibratePreferred = options.vibrateEnabled;
+  if (options.soundFileName) {
+    alarmSoundFileName = options.soundFileName;
+  }
+  if (
+    Platform.OS === 'android' &&
+    configured &&
+    options.soundFileName &&
+    options.soundFileName !== previousSound
+  ) {
+    // Channel setup is heavy — never block the UI thread on tone taps.
+    setTimeout(() => {
+      void ensureAndroidAlertChannels();
+    }, 0);
+  }
 }
 
 Notifications.setNotificationHandler({
@@ -54,8 +75,13 @@ Notifications.setNotificationHandler({
 let configured = false;
 
 function androidChannelIdForPrefs(): string {
-  if (alarmSoundPreferred && alarmVibratePreferred) return CHANNEL_SOUND_VIBRATE;
-  if (alarmSoundPreferred && !alarmVibratePreferred) return CHANNEL_SOUND_ONLY;
+  const tone = soundChannelSuffix(alarmSoundFileName);
+  if (alarmSoundPreferred && alarmVibratePreferred) {
+    return `${CHANNEL_SOUND_VIBRATE_PREFIX}-${tone}`;
+  }
+  if (alarmSoundPreferred && !alarmVibratePreferred) {
+    return `${CHANNEL_SOUND_ONLY_PREFIX}-${tone}`;
+  }
   if (!alarmSoundPreferred && alarmVibratePreferred) return CHANNEL_VIBRATE_ONLY;
   return CHANNEL_MUTE;
 }
@@ -70,23 +96,27 @@ async function ensureAndroidAlertChannels(): Promise<void> {
     },
   } as const;
 
-  await Notifications.setNotificationChannelAsync(CHANNEL_SOUND_VIBRATE, {
+  const tone = soundChannelSuffix(alarmSoundFileName);
+  const soundVibrateId = `${CHANNEL_SOUND_VIBRATE_PREFIX}-${tone}`;
+  const soundOnlyId = `${CHANNEL_SOUND_ONLY_PREFIX}-${tone}`;
+
+  await Notifications.setNotificationChannelAsync(soundVibrateId, {
     name: 'Call reminders',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: VIBRATE_PATTERN,
     lightColor: '#0D9488',
-    sound: ALARM_SOUND,
+    sound: alarmSoundFileName,
     enableVibrate: true,
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     audioAttributes,
   });
 
-  await Notifications.setNotificationChannelAsync(CHANNEL_SOUND_ONLY, {
+  await Notifications.setNotificationChannelAsync(soundOnlyId, {
     name: 'Call reminders (sound)',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0],
     lightColor: '#0D9488',
-    sound: ALARM_SOUND,
+    sound: alarmSoundFileName,
     enableVibrate: false,
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     audioAttributes,
@@ -193,7 +223,7 @@ export function buildReminderNotificationContent(reminder: Reminder) {
       notes: reminder.notes,
     },
     categoryIdentifier: NOTIFICATION_CATEGORY,
-    sound: alarmSoundPreferred ? ALARM_SOUND : null,
+    sound: alarmSoundPreferred ? alarmSoundFileName : undefined,
     ...(Platform.OS === 'android'
       ? {
           channelId,
@@ -228,39 +258,30 @@ export async function scheduleReminderNotification(
     await cancelNotification(reminder.notificationId, reminder.id);
   }
 
-  // Android: AlarmManager always.
-  // Overlay ON  → full-screen overlay path (AlarmReceiver).
-  // Overlay OFF → ReminderAlarmService silent notification + looping tone/vibrate.
+  // Android: AlarmManager.setAlarmClock only (Doze-exempt). Never fall back to
+  // Expo date triggers — those are delayed under Doze / battery optimization.
   if (isAndroidAlarmSupported) {
     const content = buildReminderNotificationContent(reminder);
-    try {
-      return await scheduleAlarm({
-        id: reminder.id,
-        triggerAt: reminder.scheduledAt,
-        title: content.title,
-        body: content.body,
-        reminderId: reminder.id,
-        contactName: reminder.contactName,
-        phoneNumber: reminder.phoneNumber,
-        notes: reminder.notes,
-      });
-    } catch (error) {
-      console.warn('Native alarm failed; falling back to notification', error);
-    }
+    return await scheduleAlarm({
+      id: reminder.id,
+      triggerAt: reminder.scheduledAt,
+      title: content.title,
+      body: content.body,
+      reminderId: reminder.id,
+      contactName: reminder.contactName,
+      phoneNumber: reminder.phoneNumber,
+      notes: reminder.notes,
+    });
   }
 
   const content = buildReminderNotificationContent(reminder);
-  const id = await Notifications.scheduleNotificationAsync({
+  return await Notifications.scheduleNotificationAsync({
     content,
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: triggerDate,
-      channelId:
-        Platform.OS === 'android' ? androidChannelIdForPrefs() : undefined,
     },
   });
-
-  return id;
 }
 
 export async function cancelNotification(
@@ -317,9 +338,8 @@ export function getSnoozeMinutesFromAction(actionId: string | null): number | nu
 
 export function describeNotificationLimitations(): string {
   return [
-    'Android may delay exact-time delivery when the device is in Doze or battery optimization modes.',
-    'Full-screen alarm needs “Full screen notifications / Alarms & reminders” allowed in system settings.',
-    'Keep Call Later unrestricted in battery settings for more reliable reminders.',
+    'Allow “Alarms & reminders” and set battery to Unrestricted so alerts fire on time in Doze.',
+    'Full-screen overlay also needs “Full screen notifications” / display-over-apps when enabled.',
   ].join(' ');
 }
 

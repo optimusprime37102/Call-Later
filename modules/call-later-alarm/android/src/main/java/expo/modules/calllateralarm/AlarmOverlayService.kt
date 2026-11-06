@@ -41,41 +41,56 @@ class AlarmOverlayService : Service() {
   }
 
   private fun startAsForeground(payload: AlarmOverlayPayload) {
-    ensureServiceChannel()
-    val activityIntent = AlarmReceiver.buildOverlayActivityIntent(
-      this,
-      payload.alarmId,
-      payload.reminderId,
-      payload.contactName,
-      payload.phoneNumber,
-      payload.notes,
-    )
-    val pending = PendingIntent.getActivity(
-      this,
-      payload.alarmId.hashCode(),
-      activityIntent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-
-    val notification: Notification = NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
-      .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-      .setContentTitle("Call Later alarm")
-      .setContentText("Reminder for ${payload.contactName}")
-      .setContentIntent(pending)
-      .setOngoing(true)
-      .setCategory(NotificationCompat.CATEGORY_SERVICE)
-      .setPriority(NotificationCompat.PRIORITY_LOW)
-      .build()
+    // Reuse the main Call Later notification id so Android does not show a
+    // second silent "Call Later alarm" FGS notification in the shade.
+    val notificationId = payload.alarmId.hashCode()
+    val notification = findActiveNotification(notificationId)
+      ?: buildFallbackForegroundNotification(payload)
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       startForeground(
-        SERVICE_NOTIFICATION_ID,
+        notificationId,
         notification,
         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
       )
     } else {
-      startForeground(SERVICE_NOTIFICATION_ID, notification)
+      startForeground(notificationId, notification)
     }
+  }
+
+  private fun findActiveNotification(notificationId: Int): Notification? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+    return try {
+      val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+      manager.activeNotifications.firstOrNull { it.id == notificationId }?.notification
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun buildFallbackForegroundNotification(payload: AlarmOverlayPayload): Notification {
+    ensureServiceChannel()
+    val openInApp = AlarmReceiver.buildOpenInAppIntent(
+      this,
+      payload.alarmId,
+      payload.reminderId,
+    )
+    val pending = PendingIntent.getActivity(
+      this,
+      payload.alarmId.hashCode(),
+      openInApp,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    return NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
+      .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+      .setContentTitle("Call Later")
+      .setContentText("Time to call ${payload.contactName}")
+      .setContentIntent(pending)
+      .setOngoing(true)
+      .setSilent(true)
+      .setCategory(NotificationCompat.CATEGORY_ALARM)
+      .setPriority(NotificationCompat.PRIORITY_LOW)
+      .build()
   }
 
   private fun showOverlay(payload: AlarmOverlayPayload) {
@@ -141,7 +156,6 @@ class AlarmOverlayService : Service() {
 
   companion object {
     private const val SERVICE_CHANNEL_ID = "call-later-overlay-service"
-    private const val SERVICE_NOTIFICATION_ID = 71001
 
     fun start(context: Context, intent: Intent) {
       val serviceIntent = Intent(context, AlarmOverlayService::class.java).apply {

@@ -13,6 +13,13 @@ import {
 } from 'react-native';
 import { format } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  canScheduleExactAlarms,
+  isAndroidAlarmSupported,
+  isIgnoringBatteryOptimizations,
+  openExactAlarmSettings,
+  requestIgnoreBatteryOptimizations,
+} from 'call-later-alarm';
 import { ContactPickerModal } from '@/src/components/ContactPickerModal';
 import { QuickScheduleChips } from '@/src/components/QuickScheduleChips';
 import { TextField } from '@/src/components/TextField';
@@ -26,10 +33,10 @@ import {
   resolveQuickSchedule,
 } from '@/src/utils/dates';
 import { isValidPhoneNumber } from '@/src/utils/phone';
-import { radius, shadows, spacing } from '@/src/theme/tokens';
+import { palette, radius, shadows, spacing } from '@/src/theme/tokens';
 
 export default function ScheduleScreen() {
-  const { colors } = useAppTheme();
+  const { colors, colorScheme } = useAppTheme();
   const { alert } = useDialog();
   const { createReminder, updateReminder, getById } = useReminders();
   const params = useLocalSearchParams<{ id?: string }>();
@@ -131,6 +138,30 @@ export default function ScheduleScreen() {
     if (!validate()) return;
     setSaving(true);
     try {
+      if (isAndroidAlarmSupported) {
+        const exactOk = await canScheduleExactAlarms();
+        if (!exactOk) {
+          alert(
+            'Allow exact alarms',
+            'Android needs “Alarms & reminders” so Call Later can alert you on time in Doze.',
+            [
+              { label: 'Not now', variant: 'secondary' },
+              {
+                label: 'Allow',
+                variant: 'primary',
+                onPress: () => void openExactAlarmSettings(),
+              },
+            ],
+          );
+          return;
+        }
+        // System dialog once if still optimized — required for OEM Doze killers.
+        const batteryOk = await isIgnoringBatteryOptimizations();
+        if (!batteryOk) {
+          void requestIgnoreBatteryOptimizations();
+        }
+      }
+
       if (editId) {
         await updateReminder(editId, {
           contactName: name.trim(),
@@ -150,9 +181,30 @@ export default function ScheduleScreen() {
       }
       router.back();
     } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong';
+      const needsExactAlarm =
+        isAndroidAlarmSupported && /exact alarm/i.test(message);
       alert(
         'Could not save reminder',
-        err instanceof Error ? err.message : 'Something went wrong',
+        needsExactAlarm
+          ? 'Allow “Alarms & reminders” and unrestricted battery so alerts fire on time.'
+          : message,
+        needsExactAlarm
+          ? [
+              { label: 'Not now', variant: 'secondary' },
+              {
+                label: 'Alarms settings',
+                variant: 'primary',
+                onPress: () => void openExactAlarmSettings(),
+              },
+              {
+                label: 'Battery',
+                variant: 'secondary',
+                onPress: () => void requestIgnoreBatteryOptimizations(),
+              },
+            ]
+          : undefined,
       );
     } finally {
       setSaving(false);
@@ -161,7 +213,21 @@ export default function ScheduleScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: editId ? 'Edit reminder' : 'Schedule call' }} />
+      <Stack.Screen
+        options={{
+          title: editId ? 'Edit reminder' : 'Schedule call',
+          headerStyle: {
+            backgroundColor:
+              colorScheme === 'dark' ? palette.ink900 : palette.teal800,
+          },
+          headerTintColor: palette.mist50,
+          headerTitleStyle: {
+            color: palette.mist50,
+            fontWeight: '700',
+            fontSize: 17,
+          },
+        }}
+      />
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.background }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

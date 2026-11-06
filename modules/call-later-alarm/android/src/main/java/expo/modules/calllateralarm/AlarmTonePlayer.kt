@@ -3,7 +3,6 @@ package expo.modules.calllateralarm
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -11,16 +10,28 @@ import android.os.VibratorManager
 
 object AlarmTonePlayer {
   private var player: MediaPlayer? = null
+  private var vibrating = false
 
   @Synchronized
   fun start(context: Context) {
-    stop(context)
     val playSound = AlarmFeedbackPrefs.soundEnabled(context)
     val playVibrate = AlarmFeedbackPrefs.vibrateEnabled(context)
 
+    // Already ringing (e.g. overlay service + full-screen activity both start): keep one stream.
+    val alreadyPlaying = try {
+      player?.isPlaying == true
+    } catch (_: Exception) {
+      false
+    }
+    if (alreadyPlaying && (!playVibrate || vibrating)) {
+      return
+    }
+
+    stop(context)
+
     if (playSound) {
       try {
-        val soundUri = Uri.parse("android.resource://${context.packageName}/raw/alarm")
+        val soundUri = AlarmFeedbackPrefs.soundUri(context)
         player = MediaPlayer().apply {
           setAudioAttributes(
             AudioAttributes.Builder()
@@ -41,6 +52,7 @@ object AlarmTonePlayer {
 
     if (playVibrate) {
       vibrate(context, repeat = true)
+      vibrating = true
     }
   }
 
@@ -55,6 +67,7 @@ object AlarmTonePlayer {
     } catch (_: Exception) {
     }
     player = null
+    vibrating = false
 
     context?.let { stopVibration(it) }
   }

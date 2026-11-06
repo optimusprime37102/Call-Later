@@ -1,4 +1,5 @@
 import { addMinutes } from 'date-fns';
+import { Platform } from 'react-native';
 import * as remindersRepo from '@/src/db/remindersRepository';
 import type {
   CreateReminderInput,
@@ -86,8 +87,12 @@ export async function createScheduledReminder(
         };
       }
     } catch (error) {
-      // Keep the reminder even if notification scheduling fails.
       console.warn('Failed to schedule notification', error);
+      if (Platform.OS === 'android') {
+        // Don't leave a reminder that will never fire under Doze.
+        await remindersRepo.deleteReminder(reminder.id);
+        throw error;
+      }
     }
   }
 
@@ -138,6 +143,7 @@ export async function updateScheduledReminder(
         (await remindersRepo.updateReminder(id, { notificationId })) ?? updated;
     } catch (error) {
       console.warn('Failed to reschedule notification', error);
+      if (Platform.OS === 'android') throw error;
     }
   }
 

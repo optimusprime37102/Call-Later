@@ -1,10 +1,14 @@
 package expo.modules.calllateralarm
 
+import android.app.AppOpsManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Process
+import android.os.PowerManager
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -27,12 +31,9 @@ class CallLaterAlarmModule : Module() {
       val phoneNumber = params["phoneNumber"] as? String ?: ""
       val notes = params["notes"] as? String ?: ""
 
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val alarmManager =
-          context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        if (!alarmManager.canScheduleExactAlarms()) {
-          throw Exception("Exact alarm permission is required for reliable reminders")
-        }
+      // Require the real Alarms & reminders toggle — not battery-exemption alone.
+      if (!isAlarmsAndRemindersEnabled(context)) {
+        throw Exception("Exact alarm permission is required for reliable reminders")
       }
 
       AlarmScheduler.schedule(
@@ -60,7 +61,14 @@ class CallLaterAlarmModule : Module() {
       val soundEnabled = params["soundEnabled"] as? Boolean ?: true
       val vibrateEnabled = params["vibrateEnabled"] as? Boolean ?: true
       val overlayEnabled = params["overlayEnabled"] as? Boolean ?: true
-      AlarmFeedbackPrefs.set(context, soundEnabled, vibrateEnabled, overlayEnabled)
+      val soundResource = params["soundResource"] as? String ?: "alarm"
+      AlarmFeedbackPrefs.set(
+        context,
+        soundEnabled,
+        vibrateEnabled,
+        overlayEnabled,
+        soundResource,
+      )
     }
 
     AsyncFunction("startAlarmFeedback") {
@@ -107,6 +115,79 @@ class CallLaterAlarmModule : Module() {
       context.startActivity(intent)
     }
 
+    /**
+     * Matches the system Settings → Alarms & reminders toggle.
+     * Do NOT use AlarmManager.canScheduleExactAlarms() here — that also returns
+     * true when the app is battery-unrestricted, which falsely shows “Allowed”.
+     */
+    AsyncFunction("canScheduleExactAlarms") {
+      isAlarmsAndRemindersEnabled(context)
+    }
+
+    AsyncFunction("openExactAlarmSettings") {
+      val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+          data = Uri.parse("package:${context.packageName}")
+        }
+      } else {
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+          data = Uri.parse("package:${context.packageName}")
+        }
+      }
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(intent)
+    }
+
+    AsyncFunction("isIgnoringBatteryOptimizations") {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        return@AsyncFunction true
+      }
+      val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+      powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    AsyncFunction("requestIgnoreBatteryOptimizations") {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        return@AsyncFunction null
+      }
+      val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+      if (powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+        return@AsyncFunction null
+      }
+      try {
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+          data = Uri.parse("package:${context.packageName}")
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+      } catch (_: Exception) {
+        val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(fallback)
+      }
+      null
+    }
+
+    AsyncFunction("openBatteryOptimizationSettings") {
+      try {
+        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+      } catch (_: Exception) {
+        val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+          data = Uri.parse("package:${context.packageName}")
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(fallback)
+      }
+    }
+
+    AsyncFunction("reschedulePersistedAlarms") {
+      AlarmScheduler.rescheduleAll(context)
+    }
+
     AsyncFunction("consumePendingActions") {
       val completed = AlarmActionStore.consumeCompletedIds(context)
       val snoozed = AlarmActionStore.consumeSnoozed(context)
@@ -122,6 +203,43 @@ class CallLaterAlarmModule : Module() {
 
     AsyncFunction("consumePendingReminderOpen") {
       AlarmLaunchStore.consumePending(context)
+    }
+  }
+
+  companion object {
+    // Literal — AppOpsManager.OPSTR_SCHEDULE_EXACT_ALARM is API 31 and missing on some stubs.
+    private const val OPSTR_SCHEDULE_EXACT_ALARM = "android:schedule_exact_alarm"
+    private const val PERMISSION_SCHEDULE_EXACT_ALARM =
+      "android.permission.SCHEDULE_EXACT_ALARM"
+
+    /**
+     * True only when the user enabled Alarms & reminders for this app.
+     * Battery unrestricted must NOT count as granted.
+     */
+    fun isAlarmsAndRemindersEnabled(context: Context): Boolean {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+
+      try {
+        val appOps = context.getSystemService(AppOpsManager::class.java)
+        if (appOps != null) {
+          val mode = appOps.unsafeCheckOpNoThrow(
+            OPSTR_SCHEDULE_EXACT_ALARM,
+            Process.myUid(),
+            context.packageName,
+          )
+          return when (mode) {
+            AppOpsManager.MODE_ALLOWED -> true
+            AppOpsManager.MODE_DEFAULT ->
+              context.checkSelfPermission(PERMISSION_SCHEDULE_EXACT_ALARM) ==
+                PackageManager.PERMISSION_GRANTED
+            else -> false
+          }
+        }
+      } catch (_: Exception) {
+      }
+
+      return context.checkSelfPermission(PERMISSION_SCHEDULE_EXACT_ALARM) ==
+        PackageManager.PERMISSION_GRANTED
     }
   }
 }

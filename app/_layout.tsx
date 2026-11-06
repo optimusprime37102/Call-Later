@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import 'react-native-reanimated';
 
+import { DeliveryPermissionsGate } from '@/src/components/DeliveryPermissionsGate';
 import { SplashView } from '@/src/components/SplashView';
 import { StatusBarBackdrop } from '@/src/components/StatusBarBackdrop';
 import { AlarmOverlayProvider } from '@/src/context/AlarmOverlayContext';
@@ -55,6 +56,7 @@ function AppBootstrap({ children }: { children: React.ReactNode }) {
           <StatusBar style="light" />
           <StatusBarBackdrop />
           {children}
+          <DeliveryPermissionsGate />
         </View>
       </AlarmOverlayProvider>
     </DialogProvider>
@@ -96,7 +98,6 @@ function RootNavigator() {
         options={{
           title: 'Schedule call',
           presentation: 'modal',
-          headerStyle: { backgroundColor: colors.surface },
           contentStyle: { backgroundColor: colors.background },
         }}
       />
@@ -111,6 +112,12 @@ function RootNavigator() {
         options={{
           title: 'Privacy Policy',
           presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
+        name="alarm-sound"
+        options={{
+          title: 'Alarm sound',
         }}
       />
     </Stack>

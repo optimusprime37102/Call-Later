@@ -1,6 +1,6 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -33,6 +33,8 @@ export default function ReminderDetailScreen() {
   const { colors, colorScheme, settings } = useAppTheme();
   const { alert, confirm } = useDialog();
   const {
+    pending: pendingReminders,
+    completed: completedReminders,
     getById,
     completeReminder,
     deleteReminder,
@@ -40,29 +42,55 @@ export default function ReminderDetailScreen() {
     refresh,
   } = useReminders();
 
-  const [reminder, setReminder] = useState<Reminder | null>(null);
-  const [loading, setLoading] = useState(true);
+  const reminderFromStore = useMemo(() => {
+    if (!id) return null;
+    return (
+      pendingReminders.find((row) => row.id === id) ??
+      completedReminders.find((row) => row.id === id) ??
+      null
+    );
+  }, [pendingReminders, completedReminders, id]);
+
+  const [reminder, setReminder] = useState<Reminder | null>(reminderFromStore);
+  const [loading, setLoading] = useState(!reminderFromStore);
   const [busy, setBusy] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    const row = await getById(id);
-    setReminder(row);
-    setLoading(false);
-  }, [getById, id]);
-
+  // Context refresh (edit save / app resume) updates detail immediately.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (reminderFromStore) {
+      setReminder(reminderFromStore);
+      setLoading(false);
+    }
+  }, [reminderFromStore]);
+
+  // Soft SQLite reload on focus (return from Edit, deep link, first open).
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void (async () => {
+        if (!id) return;
+        try {
+          const row = await getById(id);
+          if (!cancelled) {
+            setReminder(row);
+            setLoading(false);
+          }
+        } catch {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [id, getById]),
+  );
 
   const run = async (action: () => Promise<void>, successMessage?: string) => {
     setBusy(true);
     try {
       await action();
       await refresh();
-      await load();
       if (successMessage) {
         alert('Done', successMessage);
       }

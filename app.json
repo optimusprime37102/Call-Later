@@ -32,7 +32,7 @@
         "android.permission.READ_CONTACTS",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.USE_EXACT_ALARM",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "android.permission.USE_FULL_SCREEN_INTENT",
         "android.permission.WAKE_LOCK",
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -50,6 +50,7 @@
     "plugins": [
       "./plugins/withWindowsCmakePathFix",
       "./plugins/withAndroidAlarmFullscreen",
+      "./plugins/withAlarmSoundResources",
       "expo-router",
       "expo-sqlite",
       [
@@ -68,7 +69,13 @@
           "color": "#0D9488",
           "defaultChannel": "call-reminders-v3",
           "sounds": [
-            "./assets/sounds/alarm.wav"
+            "./assets/sounds/alarm.wav",
+            "./assets/sounds/alarm2.wav",
+            "./assets/sounds/alarm3.wav",
+            "./assets/sounds/alarm4.wav",
+            "./assets/sounds/alarm5.wav",
+            "./assets/sounds/alarm6.wav",
+            "./assets/sounds/alarm7.wav"
           ]
         }
       ],
@@ -78,7 +85,15 @@
           "contactsPermission": "Allow Call Later to access contacts so you can schedule callbacks."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

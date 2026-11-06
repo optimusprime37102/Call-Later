@@ -1,3 +1,4 @@
+import { getAlarmSound } from '@/src/constants/alarmSounds';
 import {
     setAlarmFeedbackNotificationPreferences,
     setAlarmOverlayPreference,
@@ -9,6 +10,7 @@ import {
     themes,
 } from '@/src/theme/tokens';
 import {
+    AlarmSoundId,
     AppSettings,
     DEFAULT_SETTINGS,
     SnoozeDurationMinutes,
@@ -37,21 +39,25 @@ interface ThemeContextValue {
   setAlarmOverlayEnabled: (enabled: boolean) => Promise<void>;
   setAlarmSoundEnabled: (enabled: boolean) => Promise<void>;
   setAlarmVibrateEnabled: (enabled: boolean) => Promise<void>;
+  setAlarmSoundId: (soundId: AlarmSoundId) => Promise<void>;
   refreshSettings: () => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 async function syncNativeFeedbackPrefs(settings: AppSettings) {
+  const sound = getAlarmSound(settings.alarmSoundId);
   setAlarmFeedbackNotificationPreferences({
     soundEnabled: settings.alarmSoundEnabled,
     vibrateEnabled: settings.alarmVibrateEnabled,
+    soundFileName: sound.fileName,
   });
   try {
     await setAlarmFeedbackOptions({
       soundEnabled: settings.alarmSoundEnabled,
       vibrateEnabled: settings.alarmVibrateEnabled,
       overlayEnabled: settings.alarmOverlayEnabled,
+      soundResource: sound.resourceName,
     });
   } catch {
     // Native module unavailable (e.g. iOS / Expo Go).
@@ -67,10 +73,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSettings = useCallback(async () => {
     const loaded = await loadSettings();
-    setAlarmOverlayPreference(loaded.alarmOverlayEnabled);
-    await syncNativeFeedbackPrefs(loaded);
-    settingsRef.current = loaded;
-    setSettings(loaded);
+    // Notifications are always on — no Settings toggle to disable them.
+    const next = loaded.notificationsEnabled
+      ? loaded
+      : { ...loaded, notificationsEnabled: true };
+    if (!loaded.notificationsEnabled) {
+      void saveSettings(next);
+    }
+    setAlarmOverlayPreference(next.alarmOverlayEnabled);
+    await syncNativeFeedbackPrefs(next);
+    settingsRef.current = next;
+    setSettings(next);
     setIsReady(true);
   }, []);
 
@@ -79,14 +92,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [refreshSettings]);
 
   // Update React state synchronously so Switch controls don't snap back,
-  // then persist / sync native prefs in the background.
+  // then persist / sync native prefs after the next paint (avoids tap lag).
   const persistPatch = useCallback((patch: Partial<AppSettings>) => {
     const next = { ...settingsRef.current, ...patch };
     settingsRef.current = next;
     setSettings(next);
     setAlarmOverlayPreference(next.alarmOverlayEnabled);
-    void syncNativeFeedbackPrefs(next);
-    void saveSettings(next);
+    requestAnimationFrame(() => {
+      void syncNativeFeedbackPrefs(next);
+      void saveSettings(next);
+    });
   }, []);
 
   const setTheme = useCallback(
@@ -131,6 +146,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     [persistPatch],
   );
 
+  const setAlarmSoundId = useCallback(
+    async (soundId: AlarmSoundId) => {
+      persistPatch({ alarmSoundId: soundId });
+    },
+    [persistPatch],
+  );
+
   const colorScheme: ColorSchemeName =
     settings.theme === 'system'
       ? systemScheme === 'dark'
@@ -150,6 +172,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setAlarmOverlayEnabled,
       setAlarmSoundEnabled,
       setAlarmVibrateEnabled,
+      setAlarmSoundId,
       refreshSettings,
     }),
     [
@@ -162,6 +185,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setAlarmOverlayEnabled,
       setAlarmSoundEnabled,
       setAlarmVibrateEnabled,
+      setAlarmSoundId,
       refreshSettings,
     ],
   );

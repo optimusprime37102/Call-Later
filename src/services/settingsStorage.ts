@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isAlarmSoundId } from '@/src/constants/alarmSounds';
 import {
   AppSettings,
   DEFAULT_SETTINGS,
@@ -47,6 +48,9 @@ export async function loadSettings(): Promise<AppSettings> {
         parsed.alarmVibrateEnabled,
         DEFAULT_SETTINGS.alarmVibrateEnabled,
       ),
+      alarmSoundId: isAlarmSoundId(parsed.alarmSoundId)
+        ? parsed.alarmSoundId
+        : DEFAULT_SETTINGS.alarmSoundId,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

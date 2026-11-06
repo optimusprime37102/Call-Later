@@ -11,8 +11,9 @@ function withAndroidAlarmFullscreen(config) {
   return AndroidConfig.Permissions.withPermissions(config, [
     'android.permission.USE_FULL_SCREEN_INTENT',
     'android.permission.WAKE_LOCK',
-    'android.permission.USE_EXACT_ALARM',
     'android.permission.SCHEDULE_EXACT_ALARM',
+    'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+    'android.permission.RECEIVE_BOOT_COMPLETED',
     'android.permission.SYSTEM_ALERT_WINDOW',
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',

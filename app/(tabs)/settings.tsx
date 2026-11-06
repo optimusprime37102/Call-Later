@@ -9,13 +9,11 @@ import {
 import { useDialog } from '@/src/context/DialogContext';
 import { useReminders } from '@/src/context/RemindersContext';
 import { useAppTheme } from '@/src/context/ThemeContext';
-import {
-  describeNotificationLimitations,
-  requestNotificationPermissions,
-} from '@/src/services/notifications';
+import { describeNotificationLimitations } from '@/src/services/notifications';
 import { rehydratePendingNotifications } from '@/src/services/reminderService';
 import { tabBarContentInset } from '@/src/theme/layout';
 import { radius, shadows, spacing } from '@/src/theme/tokens';
+import { getAlarmSound } from '@/src/constants/alarmSounds';
 import {
   SnoozeDurationMinutes,
   ThemePreference,
@@ -23,16 +21,23 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   canDrawOverlays,
+  canScheduleExactAlarms,
   canUseFullScreenIntent,
   isAndroidAlarmSupported,
+  isIgnoringBatteryOptimizations,
+  openBatteryOptimizationSettings,
+  openExactAlarmSettings,
   openFullScreenIntentSettings,
   openOverlaySettings,
+  requestIgnoreBatteryOptimizations,
 } from 'call-later-alarm';
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  AppState,
+  type AppStateStatus,
   Linking,
   Platform,
   Pressable,
@@ -65,7 +70,6 @@ export default function SettingsScreen() {
     settings,
     setTheme,
     setDefaultSnooze,
-    setNotificationsEnabled,
     setAlarmOverlayEnabled,
     setAlarmSoundEnabled,
     setAlarmVibrateEnabled,
@@ -73,92 +77,63 @@ export default function SettingsScreen() {
   const { alert } = useDialog();
   const { refresh } = useReminders();
   const [busy, setBusy] = useState(false);
+  const [exactAlarmsOk, setExactAlarmsOk] = useState(false);
+  const [batteryUnrestricted, setBatteryUnrestricted] = useState(false);
+  /** Remount overlay Switch when enable is rejected so the thumb cannot stick ON. */
+  const [overlaySwitchEpoch, setOverlaySwitchEpoch] = useState(0);
+  /** Waiting for display-over-apps after user taps Allow in the prompt. */
+  const pendingOverlayEnableRef = useRef(false);
+
+  const keepOverlayToggleOff = useCallback(() => {
+    pendingOverlayEnableRef.current = false;
+    void setAlarmOverlayEnabled(false);
+    setOverlaySwitchEpoch((n) => n + 1);
+  }, [setAlarmOverlayEnabled]);
 
   const version =
     Constants.expoConfig?.version ??
     Constants.nativeAppVersion ??
     '1.0.0';
 
-  const onToggleNotifications = async (enabled: boolean) => {
-    // Commit UI state first so the Switch doesn't animate back.
-    void setNotificationsEnabled(enabled);
+  const refreshDeliveryPermissions = useCallback(async () => {
+    if (!isAndroidAlarmSupported) {
+      setExactAlarmsOk(true);
+      setBatteryUnrestricted(true);
+      return;
+    }
+    try {
+      const [exactOk, batteryOk] = await Promise.all([
+        canScheduleExactAlarms(),
+        isIgnoringBatteryOptimizations(),
+      ]);
+      setExactAlarmsOk(exactOk);
+      setBatteryUnrestricted(batteryOk);
+    } catch {
+      // Native module may be unavailable before rebuild.
+    }
+  }, []);
 
-    if (enabled) {
-      const granted = await requestNotificationPermissions();
-      if (!granted) {
-        void setNotificationsEnabled(false);
+  const enableOverlayAfterPermission = useCallback(async () => {
+    void setAlarmOverlayEnabled(true);
+    setBusy(true);
+    try {
+      const fsiAllowed = await canUseFullScreenIntent();
+      if (!fsiAllowed) {
         alert(
-          'Permission needed',
-          'Enable notifications in system settings so Call Later can remind you.',
+          'Allow full-screen alarms',
+          'Needed so the alarm can appear on the lock screen.',
           [
             { label: 'Not now', variant: 'secondary' },
             {
               label: 'Open settings',
               variant: 'primary',
-              onPress: () => void Linking.openSettings(),
+              onPress: () => void openFullScreenIntentSettings(),
             },
           ],
         );
-        return;
       }
-    }
-
-    setBusy(true);
-    try {
-      await rehydratePendingNotifications(enabled, settings.alarmOverlayEnabled);
+      await rehydratePendingNotifications(true, true);
       await refresh();
-    } catch (err) {
-      alert(
-        'Unable to update notifications',
-        err instanceof Error ? err.message : 'Something went wrong',
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onToggleAlarmOverlay = async (enabled: boolean) => {
-    // Commit UI state first so the Switch doesn't animate back.
-    void setAlarmOverlayEnabled(enabled);
-
-    setBusy(true);
-    try {
-      if (enabled && isAndroidAlarmSupported) {
-        const drawAllowed = await canDrawOverlays();
-        if (!drawAllowed) {
-          alert(
-            'Allow display over other apps',
-            'This lets Call Later show the alarm overlay without opening the app.',
-            [
-              { label: 'Not now', variant: 'secondary' },
-              {
-                label: 'Open settings',
-                variant: 'primary',
-                onPress: () => void openOverlaySettings(),
-              },
-            ],
-          );
-        }
-        const fsiAllowed = await canUseFullScreenIntent();
-        if (!fsiAllowed) {
-          alert(
-            'Allow full-screen alarms',
-            'Needed so the alarm can appear on the lock screen.',
-            [
-              { label: 'Not now', variant: 'secondary' },
-              {
-                label: 'Open settings',
-                variant: 'primary',
-                onPress: () => void openFullScreenIntentSettings(),
-              },
-            ],
-          );
-        }
-      }
-      if (settings.notificationsEnabled) {
-        await rehydratePendingNotifications(true, enabled);
-        await refresh();
-      }
     } catch (err) {
       alert(
         'Unable to update full-screen alarm',
@@ -167,6 +142,86 @@ export default function SettingsScreen() {
     } finally {
       setBusy(false);
     }
+  }, [alert, refresh, setAlarmOverlayEnabled]);
+
+  useEffect(() => {
+    void refreshDeliveryPermissions();
+    const onAppState = (state: AppStateStatus) => {
+      if (state !== 'active') return;
+      void refreshDeliveryPermissions();
+
+      if (!pendingOverlayEnableRef.current) return;
+      void (async () => {
+        try {
+          const drawAllowed = await canDrawOverlays();
+          if (drawAllowed) {
+            pendingOverlayEnableRef.current = false;
+            await enableOverlayAfterPermission();
+            return;
+          }
+          // Returned without granting — keep toggle off.
+          keepOverlayToggleOff();
+        } catch {
+          keepOverlayToggleOff();
+        }
+      })();
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [
+    enableOverlayAfterPermission,
+    keepOverlayToggleOff,
+    refreshDeliveryPermissions,
+  ]);
+
+  const onToggleAlarmOverlay = async (enabled: boolean) => {
+    if (!enabled) {
+      keepOverlayToggleOff();
+      setBusy(true);
+      try {
+        await rehydratePendingNotifications(true, false);
+        await refresh();
+      } catch (err) {
+        alert(
+          'Unable to update full-screen alarm',
+          err instanceof Error ? err.message : 'Something went wrong',
+        );
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // Turning ON — require display-over-other-apps first (Android).
+    if (isAndroidAlarmSupported) {
+      const drawAllowed = await canDrawOverlays();
+      if (!drawAllowed) {
+        // Keep toggle OFF until permission is granted.
+        keepOverlayToggleOff();
+        pendingOverlayEnableRef.current = true;
+        alert(
+          'Allow display over other apps',
+          'This lets Call Later show the alarm overlay without opening the app. Full-screen alarm stays off until you allow it.',
+          [
+            {
+              label: 'Not now',
+              variant: 'secondary',
+              onPress: () => {
+                keepOverlayToggleOff();
+              },
+            },
+            {
+              label: 'Allow',
+              variant: 'primary',
+              onPress: () => void openOverlaySettings(),
+            },
+          ],
+        );
+        return;
+      }
+    }
+
+    await enableOverlayAfterPermission();
   };
 
   const shareApp = async () => {
@@ -318,31 +373,27 @@ export default function SettingsScreen() {
           ]}
         >
           <SwitchRow
-            icon="notifications-outline"
-            title="Reminder alerts"
-            subtitle="Local notifications for upcoming calls"
-            value={settings.notificationsEnabled}
-            disabled={busy}
-            onValueChange={(value) => void onToggleNotifications(value)}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
-          <SwitchRow
             icon="volume-high-outline"
             title="Alarm sound"
             subtitle="Play tone when a call alert starts"
             value={settings.alarmSoundEnabled}
-            disabled={!settings.notificationsEnabled || busy}
+            disabled={busy}
             onValueChange={(value) => {
               void (async () => {
                 await setAlarmSoundEnabled(value);
-                if (settings.notificationsEnabled) {
-                  await rehydratePendingNotifications(
-                    true,
-                    settings.alarmOverlayEnabled,
-                  );
-                }
+                await rehydratePendingNotifications(
+                  true,
+                  settings.alarmOverlayEnabled,
+                );
               })();
             }}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
+          <SettingsLinkRow
+            icon="musical-notes-outline"
+            title="Alarm tone"
+            subtitle={getAlarmSound(settings.alarmSoundId).title}
+            onPress={() => router.push('/alarm-sound')}
           />
           <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
           <SwitchRow
@@ -350,47 +401,99 @@ export default function SettingsScreen() {
             title="Alarm vibrate"
             subtitle="Vibrate while the call alert is active"
             value={settings.alarmVibrateEnabled}
-            disabled={!settings.notificationsEnabled || busy}
+            disabled={busy}
             onValueChange={(value) => {
               void (async () => {
                 await setAlarmVibrateEnabled(value);
-                if (settings.notificationsEnabled) {
-                  await rehydratePendingNotifications(
-                    true,
-                    settings.alarmOverlayEnabled,
-                  );
-                }
+                await rehydratePendingNotifications(
+                  true,
+                  settings.alarmOverlayEnabled,
+                );
               })();
             }}
           />
           <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
           <SwitchRow
+            key={`overlay-switch-${overlaySwitchEpoch}`}
             icon="phone-portrait-outline"
             title="Full-screen alarm"
             subtitle="Overlay alert without opening the app"
             value={settings.alarmOverlayEnabled}
-            disabled={!settings.notificationsEnabled || busy}
+            disabled={busy}
             onValueChange={(value) => void onToggleAlarmOverlay(value)}
           />
-          {settings.alarmOverlayEnabled && isAndroidAlarmSupported ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                void Haptics.selectionAsync();
-                void openOverlaySettings();
-              }}
-              style={styles.permissionLink}
-            >
-              <RowIcon
-                name="layers-outline"
-                tint={colors.primary}
-                muted={colors.primaryMuted}
-              />
-              <AppText variant="caption" tone="primary" style={{ flex: 1 }}>
-                Allow display over other apps (required)
-              </AppText>
-              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-            </Pressable>
+          {isAndroidAlarmSupported ? (
+            <>
+              <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  void openExactAlarmSettings();
+                }}
+                style={styles.permissionLink}
+              >
+                <RowIcon
+                  name="alarm-outline"
+                  tint={exactAlarmsOk ? colors.primary : colors.danger}
+                  muted={exactAlarmsOk ? colors.primaryMuted : colors.dangerMuted}
+                />
+                <View style={{ flex: 1 }}>
+                  <AppText
+                    variant="caption"
+                    tone={exactAlarmsOk ? 'primary' : 'danger'}
+                  >
+                    Alarms & reminders
+                  </AppText>
+                  <AppText variant="caption" tone="secondary">
+                    {exactAlarmsOk
+                      ? 'Allowed — alerts can fire on time'
+                      : 'Required — tap to allow exact alarms'}
+                  </AppText>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={exactAlarmsOk ? colors.primary : colors.danger}
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  void (batteryUnrestricted
+                    ? openBatteryOptimizationSettings()
+                    : requestIgnoreBatteryOptimizations());
+                }}
+                style={styles.permissionLink}
+              >
+                <RowIcon
+                  name="battery-charging-outline"
+                  tint={batteryUnrestricted ? colors.primary : colors.danger}
+                  muted={
+                    batteryUnrestricted ? colors.primaryMuted : colors.dangerMuted
+                  }
+                />
+                <View style={{ flex: 1 }}>
+                  <AppText
+                    variant="caption"
+                    tone={batteryUnrestricted ? 'primary' : 'danger'}
+                  >
+                    Unrestricted battery
+                  </AppText>
+                  <AppText variant="caption" tone="secondary">
+                    {batteryUnrestricted
+                      ? 'Allowed — Doze won’t delay reminders'
+                      : 'Required — tap to disable battery optimization'}
+                  </AppText>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={batteryUnrestricted ? colors.primary : colors.danger}
+                />
+              </Pressable>
+            </>
           ) : null}
         </View>
         <View style={[styles.note, { backgroundColor: colors.primaryMuted }]}>
@@ -500,14 +603,9 @@ function SwitchRow({
   onValueChange: (value: boolean) => void;
 }) {
   const { colors } = useAppTheme();
-  // Optimistic thumb position — parent settings now update synchronously,
-  // so this only covers the same-frame gap and avoids Android flicker.
-  const [localValue, setLocalValue] = useState(value);
 
-  useEffect(() => {
-    setLocalValue(value);
-  }, [value]);
-
+  // Fully controlled — no optimistic local thumb. Needed so rejected toggles
+  // (e.g. full-screen alarm without overlay permission) stay OFF.
   return (
     <View style={styles.switchRow}>
       <RowIcon name={icon} tint={colors.primary} muted={colors.primaryMuted} />
@@ -518,11 +616,8 @@ function SwitchRow({
         </AppText>
       </View>
       <Switch
-        value={localValue}
-        onValueChange={(next) => {
-          setLocalValue(next);
-          onValueChange(next);
-        }}
+        value={value}
+        onValueChange={onValueChange}
         disabled={disabled}
         trackColor={{ false: colors.border, true: colors.primary }}
         thumbColor={colors.surface}
